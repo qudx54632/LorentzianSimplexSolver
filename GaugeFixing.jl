@@ -108,31 +108,31 @@ function normalize_timelike_xi(bdyxi, tetareasign)
     ns   = length(bdyxi)
     ntet = length(bdyxi[1])
 
-    out = Vector{Vector{Vector{Matrix{ComplexF64}}}}(undef, ns)
+    # Correct output type:
+    out = Vector{Vector{Vector{Vector{Vector{ComplexF64}}}}}(undef, ns)
 
     for k in 1:ns
-        out[k] = Vector{Vector{Matrix{ComplexF64}}}(undef, ntet)
+        out[k] = Vector{Vector{Vector{Vector{ComplexF64}}}}(undef, ntet)
+
         for i in 1:ntet
             nf = length(bdyxi[k][i])
-            out[k][i] = Vector{Matrix{ComplexF64}}(undef, nf)
+            out[k][i] = Vector{Vector{Vector{ComplexF64}}}(undef, nf)
 
             for j in 1:nf
-                X = bdyxi[k][i][j]        # 2×2
+                ξ1 = bdyxi[k][i][j][1]       # spinor (2-vector)
+                ξ2 = bdyxi[k][i][j][2]
+
                 if tetareasign[k][i][j] == -1
-                    a11 = X[1,1]
-                    z   = X[1,2] / a11
-                    r21 = conj(a11) * X[2,1]
-                    r22 = conj(a11) * X[2,2]
+                    a11 = ξ1[1]
 
-                    Y = Matrix{ComplexF64}(undef, 2, 2)
-                    Y[1,1] = 1
-                    Y[1,2] = z
-                    Y[2,1] = r21
-                    Y[2,2] = r22
+                    # SU(1,1) normalization
+                    newξ1 = ξ1 / a11
+                    newξ2 = conj(a11) .* ξ2
 
-                    out[k][i][j] = Y
+                    out[k][i][j] = [newξ1, newξ2]
                 else
-                    out[k][i][j] = X
+                    # keep original
+                    out[k][i][j] = [ξ1, ξ2]
                 end
             end
         end
@@ -233,17 +233,25 @@ function apply_left_on_xi(U, bdyxi)
     ns   = length(bdyxi)
     ntet = length(bdyxi[1])
 
-    out = Vector{Vector{Vector{Matrix{ComplexF64}}}}(undef, ns)
+    out = Vector{Vector{Vector{Vector{Vector{ComplexF64}}}}}(undef, ns)
 
     for k in 1:ns
-        out[k] = Vector{Vector{Matrix{ComplexF64}}}(undef, ntet)
+        out[k] = Vector{Vector{Vector{Vector{ComplexF64}}}}(undef, ntet)
+
         for i in 1:ntet
             nf = length(bdyxi[k][i])
-            out[k][i] = Vector{Matrix{ComplexF64}}(undef, nf)
+            out[k][i] = Vector{Vector{Vector{ComplexF64}}}(undef, nf)
 
             for j in 1:nf
-                X = bdyxi[k][i][j]
-                out[k][i][j] = U[k][i] * X
+                ξ1 = bdyxi[k][i][j][1]    # spinor 1
+                ξ2 = bdyxi[k][i][j][2]    # spinor 2
+
+                Umat = U[k][i]            # 2×2
+
+                newξ1 = Umat * ξ1
+                newξ2 = Umat * ξ2
+
+                out[k][i][j] = [newξ1, newξ2]
             end
         end
     end
@@ -265,28 +273,127 @@ end
 function build_U2(ns, ntet, timelike_lookup, gaugetimelike, bdyxi6)
     I2 = Matrix{ComplexF64}(I, 2, 2)
 
+    # U2[k][i] is a 2×2 diagonal SU(1,1)/SU(2) matrix for tet (k,i),
+    # identity if (k,i) is not in the timelike set.
     U2 = [
         [ I2 for _ in 1:ntet ]
         for _ in 1:ns
     ]
 
     for k in 1:ns, i in 1:ntet
-        key = (k,i)
+        key = (k, i)
         if haskey(timelike_lookup, key)
-            p           = timelike_lookup[key]
-            s, t, j_tm  = gaugetimelike[p]
+            # p picks which gauge-fixing triple (s,t,j_tm) to use
+            p          = timelike_lookup[key]
+            s, t, j_tm = gaugetimelike[p]
+
+            # bdyxi6[s][t][j_tm] :: Vector{Vector{ComplexF64}}
+            # first spinor, second component  → X[1][2]
             X = bdyxi6[s][t][j_tm]
-            z = X[1,2]
+            z = X[1][2]              # this was X[1,2] before (wrong for nested vectors)
             φ = angle(z)
 
             U2[k][i] = ComplexF64[
-                exp(im*φ/2)  0;
-                0            exp(-im*φ/2)
+                exp(im * φ/2)  0;
+                0              exp(-im * φ/2)
             ]
         end
     end
 
     return U2
+end
+
+function compute_xisoln(bdyxi, sgndet, tetareasign, tetn0)
+    ns   = length(bdyxi)
+    ntet = length(bdyxi[1])
+
+    xisol = Vector{Vector{Vector{Vector{Float64}}}}(undef, ns)
+
+    for k in 1:ns
+        xisol[k] = Vector{Vector{Vector{Float64}}}(undef, ntet)
+
+        for i in 1:ntet
+            nf = length(bdyxi[k][i])
+            xisol[k][i] = Vector{Vector{Float64}}(undef, nf)
+
+            for j in 1:nf
+                ξ1 = bdyxi[k][i][j][1]
+                ξ2 = bdyxi[k][i][j][2]
+
+                if sgndet[k][i] == 1
+                    θ  = asin(abs(ξ1[1]))
+                    φ  = angle(ξ1[2]) - angle(ξ1[1])
+                    xisol[k][i][j] = [θ, φ]
+
+                elseif tetareasign[k][i][j] == 1
+                    if tetn0[k][i][j] == 1
+                        θ = acosh(abs(ξ1[1]))
+                        φ = angle(ξ1[1]) - angle(ξ1[2])
+                        xisol[k][i][j] = [θ, φ]
+                    else
+                        θ = acosh(abs(ξ2[1]))
+                        φ = angle(ξ2[1]) - angle(ξ2[2])
+                        xisol[k][i][j] = [θ, φ]
+                    end
+
+                else
+                    θ = angle(ξ1[2] / ξ1[1])
+                    xisol[k][i][j] = [θ, real(ξ1[1])]  # matching MMA: second return is ξ11
+                end
+            end
+        end
+    end
+
+    return xisol
+end
+
+function compute_gdataof(slgsl2c)
+    ns   = length(slgsl2c)
+    ntet = length(slgsl2c[1])
+
+    return [
+        [ inv(transpose(slgsl2c[k][i])) for i in 1:ntet ]
+        for k in 1:ns
+    ]
+end
+
+function getz(ginvT::Matrix{ComplexF64}, ξ::Vector{ComplexF64})
+    v = ginvT * ξ
+    if abs(real(v[1])) < 1e-12 && abs(imag(v[1])) < 1e-12
+        return v ./ v[2]
+    else
+        return v ./ v[1]
+    end
+end
+
+function compute_zdataf(kappa, tetareasign, gdataof, bdyxi)
+    ns   = length(bdyxi)
+    ntet = length(bdyxi[1])
+
+    zdata = Vector{Vector{Vector{Vector{ComplexF64}}}}(undef, ns)
+
+    for k in 1:ns
+        zdata[k] = Vector{Vector{Vector{ComplexF64}}}(undef, ntet)
+
+        for i in 1:ntet
+            zdata[k][i] = Vector{Vector{ComplexF64}}(undef, ntet)
+
+            for j in 1:ntet
+                if kappa[k][i][j] == 1 && i != j
+                    if tetareasign[k][i][j] > 0
+                        ξ = bdyxi[k][i][j][1]
+                    else
+                        ξ = bdyxi[k][i][j][2]
+                    end
+                    zdata[k][i][j] = getz(gdataof[k][i], ξ)
+                else
+                    zdata[k][i][j] = ComplexF64[0,0]   # matches MMA {0,0}
+                end
+            end
+        end
+    end
+
+    return zdata
 end
 
 # ============================================================
@@ -360,6 +467,24 @@ function run_su2_su11_gauge_fix(sl2ctest2, bdybivec55stest2, sgndet, tetareasign
         for i in 1:ns
     ]
 
+    # ----------------------------------------------------------------------
+    #  EXTRA: xisoln, gdataof, zdataf
+    # ----------------------------------------------------------------------
+    xisoln = compute_xisoln(xi_final, sgndet, tetareasign, tetn0_3)
+
+    gdataof = compute_gdataof(sl2c4)
+
+    zdataf = compute_zdataf(
+        tetareasign,    # you use kappa later, check order!
+        tetareasign,
+        gdataof,
+        xi_final
+    )
+
+    geom.simplex[s].bdyxi  = xi_final
+    geom.simplex[s].solgsl2c = sl2c4
+    geom.simplex[s].zdataf = zdataf
+
     return (
         su2triangle,  # SU(2) gauge transform for each tet
         sl2c3,        # after SU(2) gauge fixing
@@ -370,7 +495,10 @@ function run_su2_su11_gauge_fix(sl2ctest2, bdybivec55stest2, sgndet, tetareasign
         xi_final,     # final ξ after SU(1,1) gauge fixing
         Uinverse,     # first SU(1,1) gauge
         U2,           # second SU(1,1) phase gauge
-        sl2c4         # final SL(2,C) connection
+        sl2c4,         # final SL(2,C) connection
+        xisoln,        # 11  NEW
+        gdataof,       # 12  NEW
+        zdataf   
     )
 end
 

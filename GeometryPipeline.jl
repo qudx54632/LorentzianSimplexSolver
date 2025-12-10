@@ -166,7 +166,7 @@ function run_geometry_pipeline(bdypoints::Vector{<:Vector{<:Real}},
     # 15. orientation of each face (κ matrix)
     # ------------------------------------------------------------
     kappa = compute_kappa(nabout, nabfrombivec, tetareasign)
-
+    zdataf = nothing
     # ------------------------------------------------------------
     # Save everything
     # ------------------------------------------------------------
@@ -186,7 +186,8 @@ function run_geometry_pipeline(bdypoints::Vector{<:Vector{<:Real}},
         nabfrombivec  = nabfrombivec,
         sgndet        = sgndet,
         tetn0sign     = tetn0sign,
-        tetareasign   = tetareasign
+        tetareasign   = tetareasign,
+        zdataf        = zdataf
     )
 
     println("Geometry pipeline complete. Data saved to '$folder'.")
@@ -199,7 +200,7 @@ function run_geometry_pipeline(bdypoints::Vector{<:Vector{<:Real}},
         bdyxi, nabout, nabfrombivec,
         bdysu, bdybivec4d55, bdybivec55,
         dihedrals, areas, kappa, tetareasign, tetn0sign,
-        tetnormalvec, sgndet
+        tetnormalvec, sgndet, zdataf
     )
 end
 

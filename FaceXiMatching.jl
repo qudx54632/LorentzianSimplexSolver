@@ -353,7 +353,7 @@ function compute_tetn0signtest(bdybivec55stest2, sgndet, tetareasign)
     return [
         [ [ sgndet[k][i] == 1 ? 1 :
             tetareasign[k][i][j] == -1 ? 1 :
-            sign(real(tr(bdybivec55stest2[k][i][j] * σ3)))
+            Int(sign(real(tr(bdybivec55stest2[k][i][j] * σ3))))
           for j in 1:length(bdybivec55stest2[k][i])]
         for i in 1:ntets ]
     for k in 1:nbdy ]

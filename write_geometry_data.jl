@@ -145,7 +145,8 @@ module write_geometry_data
         nabfrombivec    = nothing,
         sgndet          = nothing,
         tetareasign     = nothing,
-        tetn0sign       = nothing
+        tetn0sign       = nothing,
+        zdataf          = nothing
     )
 
     ensure_dir(folder)
@@ -167,6 +168,7 @@ module write_geometry_data
     if sgndet         !== nothing; write_scalar_list(joinpath(folder, "sgndet.out"), sgndet); end
     if tetareasign    !== nothing; write_nested_scalars(joinpath(folder, "tetareasign.out"), tetareasign); end
     if tetn0sign      !== nothing; write_nested_scalars(joinpath(folder, "tetn0sign.out"), tetn0sign); end
+    if zdataf         !== nothing; write_nested_vectors(joinpath(folder, "zdataf.out"), zdataf); end
 
     println("All geometry data saved to '$folder'")
     end     

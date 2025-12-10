@@ -22,6 +22,8 @@ mutable struct GeometryDataset
 
     tetnormalvec::Vector{Vector{Float64}}
     sgndet::Vector{Int}
+
+    zdataf::Union{Nothing, Vector{Vector{Vector{Vector{ComplexF64}}}}}
 end
 
 mutable struct GeometryCollection
