@@ -172,15 +172,11 @@ if ns > 1
         println("\nRunning final face-matching checks ...")
         check_all(geom)
 
-    else
-        println("\nSkipping connectivity and face matching.")
-    end
-        println("\nPerform SL(2,C), SU(2) and SU(1,1) gauge fixing? (y/n)")
-    if lowercase(readline()) == "y"
+        println("\nPerform SU(2) and SU(1,1) gauge fixing ...")
         run_su2_su11_gauge_fix(geom);
         println("\nGauge fixing finished.")
     else
-        println("\nSkipping gauge fixing.")
+        println("\nSkipping connectivity and face matching.")
     end
 else
     println("\nOnly one simplex detected; skipping global connectivity.")

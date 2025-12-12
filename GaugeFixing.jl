@@ -53,10 +53,10 @@ function build_su2_triangle(sl2ctest2, GaugeFixUpperTriangle, oppositesl2c)
     I2 = Matrix{ComplexF64}(I, 2, 2)
 
     su2triangle = [ [I2 for _ in 1:ntet] for _ in 1:ns ]
-    Gset = Set(GaugeFixUpperTriangle)
-    Oset = Set(oppositesl2c)
+    Gset = Set{Vector{Int}}(GaugeFixUpperTriangle)
+    Oset = Set{Vector{Int}}(oppositesl2c)
 
-    opp_to_gauge = Dict{Tuple{Int,Int},Tuple{Int,Int}}()
+    opp_to_gauge = Dict{Vector{Int},Vector{Int}}()
     for (gt, op) in zip(GaugeFixUpperTriangle, oppositesl2c)
         opp_to_gauge[op] = gt
     end
