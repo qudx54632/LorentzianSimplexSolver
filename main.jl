@@ -25,6 +25,8 @@ include("FourSimplexConnectivity.jl")
 include("FaceXiMatching.jl")
 include("FaceMatchingChecks.jl")
 include("GaugeFixing.jl")
+include("CriticalPoints.jl")
+include("defineVariables.jl")
 
 using .GeometryTypes: GeometryDataset, GeometryCollection
 using .GeometryPipeline: run_geometry_pipeline
@@ -34,6 +36,8 @@ using .FourSimplexConnectivity: build_global_connectivity
 using .FaceXiMatching: run_face_xi_matching
 using .FaceMatchingChecks: check_all
 using .GaugeFixingSU
+using .CriticalPoints: compute_critical_data
+using .DefineVariables: run_define_variables
 
 # ============================================================
 # 1. Ask user for connectivity list (list of vertex labels)
@@ -173,13 +177,15 @@ if ns > 1
     end
         println("\nPerform SL(2,C), SU(2) and SU(1,1) gauge fixing? (y/n)")
     if lowercase(readline()) == "y"
-        run_su2_su11_gauge_fix(geom)
+        run_su2_su11_gauge_fix(geom);
         println("\nGauge fixing finished.")
     else
         println("\nSkipping gauge fixing.")
-end
+    end
 else
     println("\nOnly one simplex detected; skipping global connectivity.")
-
 end
+
+println("\nDefine variables and find the corresponding critical points ....")
+define_var = run_define_variables(geom);
 

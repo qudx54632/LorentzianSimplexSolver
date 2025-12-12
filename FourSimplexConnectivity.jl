@@ -229,7 +229,7 @@ function orient_boundary_faces_all(OrderBDryFaces, kappa)
     out = Vector{Vector{Vector{Int}}}(undef, length(OrderBDryFaces))
     for i in 1:length(out)
         seq = OrderBDryFaces[i]
-        signs = [kappa[a][b][c] for (a,b,c) in seq]
+        signs = [kappa[p[1]][p[2]][p[3]] for p in seq]
         out[i] = signs[1] == 1 ? seq : reverse(seq)
     end
     return out
@@ -239,7 +239,7 @@ function orient_bulk_faces_all(OrderBulkFaces, kappa)
     out = Vector{Vector{Vector{Int}}}(undef, length(OrderBulkFaces))
     for i in 1:length(OrderBulkFaces)
         seq = OrderBulkFaces[i]
-        signs = [kappa[a][b][c] for (a,b,c) in seq]
+        signs = [kappa[p[1]][p[2]][p[3]] for p in seq]
         out[i] = signs[1] == -1 ? seq : reverse(seq)
     end
     return out
@@ -249,48 +249,54 @@ end
 # SU(2) gauge-fix selection
 # ------------------------------------------------------------
 function build_gauge_fix_sets(sharedTetsPos, sgndet)
-    GaugeFixUpperTriangle = Tuple{Int,Int}[]
-    oppositesl2c          = Tuple{Int,Int}[]
+    GaugeFixUpperTriangle = Vector{Vector{Int}}()
+    oppositesl2c          = Vector{Vector{Int}}()
 
     for pair in sharedTetsPos
-        s1, t1 = pair[1]
-        s2, t2 = pair[2]
+        s1, t1 = pair[1][1], pair[1][2]
+        s2, t2 = pair[2][1], pair[2][2]
 
         if sgndet[s1][t1] == 1
-            push!(GaugeFixUpperTriangle, (s1, t1))
-            push!(oppositesl2c, (s2, t2))
+            push!(GaugeFixUpperTriangle, [s1, t1])
+            push!(oppositesl2c,          [s2, t2])
         end
     end
+
     return GaugeFixUpperTriangle, oppositesl2c
 end
 
 # ------------------------------------------------------------
 # Build SU(1,1) gauge-fix triple sets
 # ------------------------------------------------------------
+# helper must exist BEFORE this function
+@inline key2(v::Vector{Int}) = string(v[1], "_", v[2])
+
 function build_timelike_data(sharedTetsPos, sgndet, tetareasign)
-    timelike_pairs = Tuple{Tuple{Int,Int},Tuple{Int,Int}}[]
-    gaugespacelike = Tuple{Int,Int,Int}[]
-    gaugetimelike  = Tuple{Int,Int,Int}[]
+    timelike_pairs = Vector{Vector{Vector{Int}}}()
+    gaugespacelike = Vector{Vector{Int}}()
+    gaugetimelike  = Vector{Vector{Int}}()
+    lookup         = Dict{String,Int}()
 
     for pair in sharedTetsPos
-        s1,t1 = pair[1]
-        s2,t2 = pair[2]
+        s1, t1 = pair[1][1], pair[1][2]
+        s2, t2 = pair[2][1], pair[2][2]
 
         if sgndet[s1][t1] == -1
             j_sp = findfirst(j -> tetareasign[s1][t1][j] == 1  && j != t1, 1:5)
             j_tm = findfirst(j -> tetareasign[s1][t1][j] == -1 && j != t1, 1:5)
             (j_sp === nothing || j_tm === nothing) && continue
 
-            push!(timelike_pairs, ((s1,t1),(s2,t2)))
-            push!(gaugespacelike, (s1,t1,j_sp))
-            push!(gaugetimelike,  (s1,t1,j_tm))
-        end
-    end
+            p1 = [s1, t1]
+            p2 = [s2, t2]
 
-    lookup = Dict{Tuple{Int,Int},Int}()
-    for (p,(p1,p2)) in enumerate(timelike_pairs)
-        lookup[p1] = p
-        lookup[p2] = p
+            push!(timelike_pairs, [p1, p2])
+            push!(gaugespacelike, [s1, t1, j_sp])
+            push!(gaugetimelike,  [s1, t1, j_tm])
+
+            idx = length(timelike_pairs)
+            lookup[key2(p1)] = idx
+            lookup[key2(p2)] = idx
+        end
     end
 
     return timelike_pairs, gaugespacelike, gaugetimelike, lookup

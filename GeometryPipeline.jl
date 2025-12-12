@@ -64,7 +64,7 @@ function run_geometry_pipeline(bdypoints::Vector{<:Vector{<:Real}})
     tet3d = [get3dtet(edges, solgso13[i]) for (i, edges) in enumerate(edgevec)]
     threededgevec = [t[1] for t in tet3d]
     sgndet        = [t[3] for t in tet3d]
-
+    
     # ------------------------------------------------------------
     # 6. 3D → 4D edge vectors (per tetra)
     # ------------------------------------------------------------
@@ -72,6 +72,7 @@ function run_geometry_pipeline(bdypoints::Vector{<:Vector{<:Real}})
         [threetofour(v, sgndet[i]) for v in threededgevec[i]]
         for i in 1:Ntet
     ]
+    
 
     # ------------------------------------------------------------
     # 7. face bivectors (4×4 and 2×2)
