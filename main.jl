@@ -183,5 +183,8 @@ else
 end
 
 println("\nDefine variables and find the corresponding critical points ....")
-define_var = run_define_variables(geom);
+println("\nEnter γ value: ")
+
+γ = parse(Float64, readline())
+define_var = run_define_variables(geom; gamma = γ);
 

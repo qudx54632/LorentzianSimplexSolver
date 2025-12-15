@@ -29,10 +29,13 @@ end
 mutable struct GeometryCollection
     simplex::Vector{GeometryDataset}
     connectivity::Vector{Dict{String, Any}}
+
+    # >>> ADD THESE <<<
+    crit::Dict{Symbol, Any}
+    varias::Dict{Symbol, Any}
 end
 
-# >>> ADD THIS <<<
 GeometryCollection(simplex::Vector{GeometryDataset}) =
-    GeometryCollection(simplex, Dict{String,Any}[])
+    GeometryCollection(simplex, Dict{String,Any}[], Dict{Symbol,Any}(), Dict{Symbol,Any}())
 
 end # module

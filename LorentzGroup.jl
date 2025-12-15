@@ -67,7 +67,7 @@ function getso13(Na::AbstractVector{<:Real})
         return Matrix{Float64}(I, 4, 4)
     elseif vec_is(Na, (0, 0, 0, -1))
         # DiagonalMatrix[{1,1,-1,-1}]
-        return Diagonal([1.0, 1.0, -1.0, -1.0])
+        return Matrix(Diagonal([1.0, 1.0, -1.0, -1.0]))
     end
 
     # General case

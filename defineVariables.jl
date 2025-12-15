@@ -2,6 +2,7 @@ module DefineVariables
 
 using LinearAlgebra
 using ..CriticalPoints: compute_critical_data
+using ..GeometryTypes
 
 # ============================================================
 # 1) Build symbolic ξ-expressions (as VECTORS, not Tuples)
@@ -682,7 +683,7 @@ end
 # - extracted solutions: gsoln, zsoln, jsoln
 # - zeta_data (Dict for ζ)
 #
-function run_define_variables(geom)
+function run_define_variables(geom; gamma::Real = 1.0)
 
     ns   = length(geom.simplex)
     ntet = length(geom.simplex[1].bdyxi)
@@ -737,7 +738,7 @@ function run_define_variables(geom)
     zetavars = build_zetavariables(xi_expr)
 
     # 3) critical data (numerical)
-    crit    = compute_critical_data(geom; gamma = 1)
+    crit = compute_critical_data(geom; gamma = gamma)
     xisoln  = crit.xisoln
     gdataof = crit.gdataof
     zdataf  = crit.zdataf
@@ -767,38 +768,35 @@ function run_define_variables(geom)
     zsoln = extract_zsoln(zvariablesall, zdataf)
     jsoln = extract_jsoln(jvariablesall, jdataf)
 
-    # Return EVERYTHING you will likely use later.
-    return (
-        # symbolic objects
-        xi_expr       = xi_expr,
-        zetavars      = zetavars,
-        gvariablesall = gvariablesall,
-        zvariablesall = zvariablesall,
-        jvariablesall = jvariablesall,
+    # --------------------------------------------------
+    # SAVE results into geom 
+    # --------------------------------------------------
 
-        # variable lists
-        xivaria       = xivaria,
-        zetavaria     = zetavaria,
-        gvaria        = gvaria,
-        zvaria        = zvaria,
-        jvaria        = jvaria,
+    geom.crit[:xisoln]    = xisoln
+    geom.crit[:gdataof]   = gdataof
+    geom.crit[:zdataf]    = zdataf
+    geom.crit[:jdataf]    = jdataf
+    geom.crit[:zeta_data] = zeta_data
+    geom.crit[:gsoln]     = gsoln
+    geom.crit[:zsoln]     = zsoln
+    geom.crit[:jsoln]     = jsoln
 
-        # numeric critical data (raw)
-        xisoln        = xisoln,
-        gdataof       = gdataof,
-        zdataf        = zdataf,
-        jdataf        = jdataf,
+    geom.varias[:xi_expr]       = xi_expr
+    geom.varias[:zetavars]      = zetavars
+    geom.varias[:gvariablesall] = gvariablesall
+    geom.varias[:zvariablesall] = zvariablesall
+    geom.varias[:jvariablesall] = jvariablesall
 
-        # extracted solutions
-        zeta_data     = zeta_data,
-        gsoln         = gsoln,
-        zsoln         = zsoln,
-        jsoln         = jsoln,
+    geom.varias[:xivaria]   = xivaria
+    geom.varias[:zetavaria] = zetavaria
+    geom.varias[:gvaria]    = gvaria
+    geom.varias[:zvaria]    = zvaria
+    geom.varias[:jvaria]    = jvaria
 
-        # special positions (often needed later)
-        gspecialpos   = gspecialpos,
-        zspecialPos   = zspecialPos
-    )
+    geom.varias[:gspecialpos] = gspecialpos
+    geom.varias[:zspecialPos] = zspecialPos
+
+    return nothing
 end
 
 end
