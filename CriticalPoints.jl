@@ -2,7 +2,7 @@ module CriticalPoints
 
 using LinearAlgebra
 
-export compute_critical_data
+export compute_bdy_critical_data
 
 # ------------------------------------------------------------
 # 1. ξ critical parameters (xisoln)
@@ -115,43 +115,32 @@ function compute_zdataf(kappa, tetareasign, gdataof, bdyxi)
     return zdata
 end
 
-# ------------------------------------------------------------
-# 5. spins j from areas and tetareasign
-# ------------------------------------------------------------
-function compute_spins(areas, tetareasign, gamma::Real)
-    ns   = length(areas)
-    ntet = length(areas[1])
+function compute_zspecialpos(zdataf, kappa; tol=1e-12)
+    ns   = length(zdataf)
+    ntet = length(zdataf[1])
 
-    γ = float(gamma)
+    out = Vector{Vector{Int}}()
 
-    jcrit = Vector{Vector{Vector{Float64}}}(undef, ns)
-
-    for s in 1:ns
-        jcrit[s] = Vector{Vector{Float64}}(undef, ntet)
-
+    for k in 1:ns
         for i in 1:ntet
-            jcrit[s][i] = Vector{Float64}(undef, ntet)
-
             for j in 1:ntet
-                A = areas[s][i][j]
-                if tetareasign[s][i][j] == 1
-                    # spacelike: area = γ j  ⇒ j = area / γ
-                    jcrit[s][i][j] = A / γ
-                else
-                    # timelike or others: area = j
-                    jcrit[s][i][j] = A
+                if kappa[k][i][j] == 1 && i != j
+                    z1 = zdataf[k][i][j][1]
+                    if !(abs(z1 - 1) < tol)
+                        push!(out, [k, i, j])
+                    end
                 end
             end
         end
     end
 
-    return jcrit
+    return out
 end
 
 # ------------------------------------------------------------
 # 6. main driver
 # ------------------------------------------------------------
-function compute_critical_data(geom; gamma::Real)
+function compute_bdy_critical_data(geom)
     ns = length(geom.simplex)
 
     xi_final    = [geom.simplex[i].bdyxi       for i in 1:ns]
@@ -166,22 +155,18 @@ function compute_critical_data(geom; gamma::Real)
     xisoln  = compute_xisoln(xi_final, sgndet, tetareasign, tetn0)
     gdataof = compute_gdataof(sl2c4)
     zdataf  = compute_zdataf(kappa, tetareasign, gdataof, xi_final)
-    jdataf  = compute_spins(areas, tetareasign, gamma)
+    areadataf  = areas
+
+    zspecialpos = compute_zspecialpos(zdataf, kappa)
 
     return (gdataof = gdataof,
             xisoln  = xisoln,
             zdataf  = zdataf,
-            jdataf  = jdataf)
+            areadataf  = areadataf,
+            zspecialpos = zspecialpos)
 end
 
 end # module
-
-
-
-
-
-
-
 
 
 

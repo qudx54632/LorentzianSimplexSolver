@@ -9,7 +9,7 @@ using Dates
 include("GeometryTypes.jl")          # defines GeometryDataset, GeometryCollection
 include("SimplexGeometry.jl")
 include("SpinAlgebra.jl")
-include("volume.jl")
+include("Volume.jl")
 include("TetraNormals.jl")
 include("DihedralAngles.jl")
 include("LorentzGroup.jl")
@@ -26,7 +26,7 @@ include("FaceXiMatching.jl")
 include("FaceMatchingChecks.jl")
 include("GaugeFixing.jl")
 include("CriticalPoints.jl")
-include("defineVariables.jl")
+include("DefineVariables.jl")
 
 using .GeometryTypes: GeometryDataset, GeometryCollection
 using .GeometryPipeline: run_geometry_pipeline
