@@ -115,28 +115,6 @@ function compute_zdataf(kappa, tetareasign, gdataof, bdyxi)
     return zdata
 end
 
-function compute_zspecialpos(zdataf, kappa; tol=1e-12)
-    ns   = length(zdataf)
-    ntet = length(zdataf[1])
-
-    out = Vector{Vector{Int}}()
-
-    for k in 1:ns
-        for i in 1:ntet
-            for j in 1:ntet
-                if kappa[k][i][j] == 1 && i != j
-                    z1 = zdataf[k][i][j][1]
-                    if !(abs(z1 - 1) < tol)
-                        push!(out, [k, i, j])
-                    end
-                end
-            end
-        end
-    end
-
-    return out
-end
-
 # ------------------------------------------------------------
 # 6. main driver
 # ------------------------------------------------------------
@@ -157,13 +135,10 @@ function compute_bdy_critical_data(geom)
     zdataf  = compute_zdataf(kappa, tetareasign, gdataof, xi_final)
     areadataf  = areas
 
-    zspecialpos = compute_zspecialpos(zdataf, kappa)
-
     return (gdataof = gdataof,
             xisoln  = xisoln,
             zdataf  = zdataf,
-            areadataf  = areadataf,
-            zspecialpos = zspecialpos)
+            areadataf  = areadataf)
 end
 
 end # module

@@ -182,9 +182,9 @@ else
     println("\nOnly one simplex detected; skipping global connectivity.")
 end
 
-println("\nDefine variables and find the corresponding critical points ....")
-println("\nEnter γ value: ")
+# println("\nDefine variables and find the corresponding critical points ....")
+# println("\nEnter γ value: ")
 
-γ = parse(Float64, readline())
-define_var = run_define_variables(geom; gamma = γ);
+# γ = parse(Float64, readline())
+# define_var = run_define_variables(geom; gamma = γ);
 

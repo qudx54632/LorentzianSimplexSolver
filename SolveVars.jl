@@ -1,6 +1,7 @@
 module SolveVars
 
 using ..CriticalPoints: compute_bdy_critical_data
+using ..DefineSymbols: find_position_in_chain, collect_bdry_symbols, collect_varias_symbols
 using PythonCall
 
 sympy = pyimport("sympy")
@@ -29,6 +30,55 @@ function solve_g_var(g_sym::Py, g_num::Matrix{ComplexF64})
     assign(im(g_sym[0,1]), imag(g_num[1,2]))
 
     # (1,0): g5 + i g6
+    assign(re(g_sym[1,0]), real(g_num[2,1]))
+    assign(im(g_sym[1,0]), imag(g_num[2,1]))
+
+    return sol
+end
+
+function solve_g_special(g_sym::Py, g_num::Matrix{ComplexF64})
+    sol = Dict{Py,Py}()
+
+    re = sympy.re
+    im = sympy.im
+
+    # helper: assign value to the unique symbol in expr
+    function assign(expr, value)
+        sym = only(collect(expr.free_symbols))   # the symbol (Py)
+        sol[sym] = Py(value)                     # IMPORTANT FIX
+    end
+
+    # (0,0): 1 + g1 + i g2
+    assign(re(g_sym[0,0] - 1), real(g_num[1,1]) - 1)
+    assign(im(g_sym[0,0] - 1), imag(g_num[1,1]) - 1)
+
+    # (1,0): g3 + i g4
+    assign(re(g_sym[1,0]), real(g_num[2,1]))
+    assign(im(g_sym[1,0]), imag(g_num[2,1]))
+
+    # (1,1): g5 + i g6
+    assign(re(g_sym[1,1]), real(g_num[2,2]))
+    assign(im(g_sym[1,2]), imag(g_num[2,2]))
+
+    return sol
+end
+
+function solve_g_upper(g_sym::Py, g_num::Matrix{ComplexF64})
+    sol = Dict{Py,Py}()
+
+    re = sympy.re
+    im = sympy.im
+
+    # helper: assign value to the unique symbol in expr
+    function assign(expr, value)
+        sym = only(collect(expr.free_symbols))   # the symbol (Py)
+        sol[sym] = Py(value)                     # IMPORTANT FIX
+    end
+
+    # (0,0): 1 + g1
+    assign(re(g_sym[0,0] - 1), real(g_num[1,1]) - 1)
+
+    # (1,0): g2 + i g3
     assign(re(g_sym[1,0]), real(g_num[2,1]))
     assign(im(g_sym[1,0]), imag(g_num[2,1]))
 
@@ -118,6 +168,26 @@ function solve_xi_var(xi_sym::Py, xi_sol::Vector{Float64})
     end
 end
 
+function split_solution(sol_all::Dict{Py,Py}, geom)
+    bdry_syms   = collect_bdry_symbols(geom)
+    varias_syms = collect_varias_symbols(geom)
+
+    sol_bdry = Dict{Py,Py}()
+    sol_vars = Dict{Py,Py}()
+
+    for (k, v) in sol_all
+        if k in bdry_syms
+            sol_bdry[k] = v
+        elseif k in varias_syms
+            sol_vars[k] = v
+        else
+            @warn "Symbol not classified as bdry or var" symbol=k
+        end
+    end
+
+    return sol_vars, sol_bdry
+end
+
 function run_solver(geom)
     g_mat  = geom.varias[:g_mat]
     z_mat  = geom.varias[:z_mat]
@@ -134,6 +204,13 @@ function run_solver(geom)
     zdataf    = geom_data.zdataf
     areadataf = geom_data.areadataf
     xisoln    = geom_data.xisoln
+    gspecialpos = geom.varias[:gspecialPos]
+
+    if ns > 1
+        GaugeFixUpperTriangle = geom.connectivity[1]["GaugeFixUpperTriangle"]
+    else 
+        GaugeFixUpperTriangle = Vector{Vector{Int}}()
+    end 
 
     kappa       = [geom.simplex[a].kappa for a in 1:ns]
     tetareasign = [geom.simplex[a].tetareasign for a in 1:ns]
@@ -143,8 +220,17 @@ function run_solver(geom)
     for a in 1:ns
         for i in 1:ntet
             # g variables
-            merge!(sol_all, solve_g_var(g_mat[a][i], gdataof[a][i]))
 
+            pos_gspecial = find_position_in_chain([a,i], gspecialpos)
+            pos_gupper   = find_position_in_chain([a,i], GaugeFixUpperTriangle)
+            if pos_gspecial !== nothing 
+                merge!(sol_all, solve_g_special(g_mat[a][i], gdataof[a][i]))
+            elseif pos_gupper !== nothing
+                merge!(sol_all, solve_g_upper(g_mat[a][i], gdataof[a][i]))
+            else
+                merge!(sol_all, solve_g_var(g_mat[a][i], gdataof[a][i]))
+            end
+            
             for j in 1:ntet
                 i == j && continue
 
@@ -162,7 +248,9 @@ function run_solver(geom)
         end
     end
 
-    return sol_all, γsym
+    sol_vars, sol_bdry = split_solution(sol_all, geom)
+
+    return sol_vars, sol_bdry, γsym
 end
 
 end

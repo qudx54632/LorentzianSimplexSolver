@@ -55,9 +55,9 @@ function getso13(Na::AbstractVector{<:Real})
     #   if timelike (Nasign == -1): Nref = (±1,0,0,0) with sign = sign(Na[1])
     #   if spacelike (Nasign == +1): Nref = (0,0,0,1)
     ref = if Nasign == -1
-        Na[1] > 0 ? [1.0, 0.0, 0.0, 0.0] : [-1.0, 0.0, 0.0, 0.0]
+        Na[1] > 0 ? [1, 0, 0, 0] : [-1, 0, 0, 0]
     else
-        [0.0, 0.0, 0.0, 1.0]
+        [0, 0, 0, 1]
     end
 
     # Special exact cases (identity / simple reflection)
@@ -67,7 +67,7 @@ function getso13(Na::AbstractVector{<:Real})
         return Matrix{Float64}(I, 4, 4)
     elseif vec_is(Na, (0, 0, 0, -1))
         # DiagonalMatrix[{1,1,-1,-1}]
-        return Matrix(Diagonal([1.0, 1.0, -1.0, -1.0]))
+        return Matrix(Diagonal([1, 1, -1, -1]))
     end
 
     # General case
@@ -86,7 +86,7 @@ function getso13(Na::AbstractVector{<:Real})
     B = wedge(ref, Na)
 
     # normalized bivector B / |B|
-    normB = sqrt(abs(0.5 * tr(B * B)))
+    normB = sqrt(abs(1/2 * tr(B * B)))
     Bnorm = B / normB
 
     # exp(θ * Bnorm) ∈ SO(1,3)
@@ -111,7 +111,7 @@ function bivec1tohalf(bivec::AbstractMatrix)
         push!(coeffs, -tr(bivec * Jvec[i]))
     end
 
-    coeffs .*= 0.5
+    coeffs .*= 1/2
 
     # linear combination Σ coeff_i * jjvec[i]
     M = zeros(ComplexF64, 2, 2)
@@ -125,8 +125,8 @@ end
 # -------------------------------------------------------------
 # Pauli σ1 for special SL(2,C) case
 # -------------------------------------------------------------
-const σ1 = [0.0 + 0im  1.0 + 0im;
-            1.0 + 0im  0.0 + 0im]
+const σ1 = [0 + 0im  1 + 0im;
+            1 + 0im  0 + 0im]
 
 # -------------------------------------------------------------
 # Compute SL(2,C) element g such that
@@ -139,9 +139,9 @@ function getsl2c(Na::AbstractVector{<:Real})
 
     # Reference normal as in getso13
     ref = if Nasign == -1
-        Na[1] > 0 ? [1.0, 0.0, 0.0, 0.0] : [-1.0, 0.0, 0.0, 0.0]
+        Na[1] > 0 ? [1, 0, 0, 0] : [-1, 0, 0, 0]
     else
-        [0.0, 0.0, 0.0, 1.0]
+        [0, 0, 0, 1]
     end
 
     # Special cases
@@ -167,7 +167,7 @@ function getsl2c(Na::AbstractVector{<:Real})
     B = wedge(ref, Na)
 
     # normalized bivector
-    normB = sqrt(abs(0.5 * tr(B * B)))
+    normB = sqrt(abs(1/2 * tr(B * B)))
     Bnorm = B / normB
 
     # spin-1/2 representation of Bnorm
