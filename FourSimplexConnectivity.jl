@@ -273,30 +273,48 @@ end
 
 function build_timelike_data(sharedTetsPos, sgndet, tetareasign)
     timelike_pairs = Vector{Vector{Vector{Int}}}()
-    gaugespacelike = Vector{Vector{Int}}()
-    gaugetimelike  = Vector{Vector{Int}}()
+    gaugespacelike = Vector{Vector{Vector{Int}}}()   # pair-level
+    gaugetimelike  = Vector{Vector{Vector{Int}}}()   # pair-level
     lookup         = Dict{String,Int}()
 
     for pair in sharedTetsPos
-        s1, t1 = pair[1][1], pair[1][2]
-        s2, t2 = pair[2][1], pair[2][2]
+        p1 = pair[1]   # [s1,t1]
+        p2 = pair[2]   # [s2,t2]
 
-        if sgndet[s1][t1] == -1
-            j_sp = findfirst(j -> tetareasign[s1][t1][j] == 1  && j != t1, 1:5)
-            j_tm = findfirst(j -> tetareasign[s1][t1][j] == -1 && j != t1, 1:5)
-            (j_sp === nothing || j_tm === nothing) && continue
+        s1, t1 = p1
+        s2, t2 = p2
 
-            p1 = [s1, t1]
-            p2 = [s2, t2]
+        # Only trigger on one side (avoid double counting)
+        sgndet[s1][t1] == -1 || continue
 
-            push!(timelike_pairs, [p1, p2])
-            push!(gaugespacelike, [s1, t1, j_sp])
-            push!(gaugetimelike,  [s1, t1, j_tm])
+        # ---- find j indices on side 1 ----
+        j_sp1 = findfirst(j -> tetareasign[s1][t1][j] == 1  && j != t1, 1:5)
+        j_tm1 = findfirst(j -> tetareasign[s1][t1][j] == -1 && j != t1, 1:5)
 
-            idx = length(timelike_pairs)
-            lookup[key2(p1)] = idx
-            lookup[key2(p2)] = idx
-        end
+        # ---- find j indices on side 2 ----
+        j_sp2 = findfirst(j -> tetareasign[s2][t2][j] == 1  && j != t2, 1:5)
+        j_tm2 = findfirst(j -> tetareasign[s2][t2][j] == -1 && j != t2, 1:5)
+
+        (j_sp1 === nothing || j_tm1 === nothing ||
+         j_sp2 === nothing || j_tm2 === nothing) && continue
+
+        # ---- register pair ----
+        push!(timelike_pairs, [p1, p2])
+
+        push!(gaugespacelike, [
+            [s1, t1, j_sp1],
+            [s2, t2, j_sp2]
+        ])
+
+        push!(gaugetimelike, [
+            [s1, t1, j_tm1],
+            [s2, t2, j_tm2]
+        ])
+
+        idx = length(timelike_pairs)
+
+        lookup[key2(p1)] = idx
+        lookup[key2(p2)] = idx
     end
 
     return timelike_pairs, gaugespacelike, gaugetimelike, lookup

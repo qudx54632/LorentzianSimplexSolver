@@ -284,7 +284,7 @@ function split_xi_variables(xi_mat, timelikeTetsPos, Gaugespacelike, Gaugetimeli
 
     # normalize lookup sets
     tl_set = Set(Tuple(p) for p in timelikeTetsPos)
-    gauge_set = Set(Tuple(p) for p in vcat(Gaugespacelike, Gaugetimelike))
+    gauge_set = Set(Tuple(p) for p in reduce(vcat, vcat(Gaugespacelike, Gaugetimelike)))
 
     var_xi    = Set{Py}()
     var_bdry  = Set{Py}()
@@ -406,7 +406,6 @@ function run_define_variables(geom)
 
     if ns > 1
         sharedTetsPos = geom.connectivity[1]["sharedTetsPos"]
-        apply_shared_tets_to_xi!(xi_expr, sharedTetsPos)
         # connectivity inputs for g/z/j variable-building
         GaugeTet              = geom.connectivity[1]["GaugeTet"]
         GaugeFixUpperTriangle = geom.connectivity[1]["GaugeFixUpperTriangle"]
@@ -451,6 +450,9 @@ function run_define_variables(geom)
     zspecialPos = compute_zspecialpos(zdataf, kappa_all)
 
     xi_mat = build_xi_variables(ns, sgndet, tetareasign, tetn0sign, sharedTetsPos)
+    if ns > 1
+        apply_shared_tets_to_xi!(xi_mat, sharedTetsPos)
+    end 
     xi_var, xi_bdry = split_xi_variables(xi_mat, timelikeTetsSharingPos, Gaugespacelike, Gaugetimelike)
 
     g_var, g_bdry, g_mat = build_g_variables(ns, GaugeTet, gspecialPos, GaugeFixUpperTriangle)

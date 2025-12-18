@@ -50,25 +50,32 @@ end
 function build_su2_triangle(sl2ctest2, GaugeFixUpperTriangle, oppositesl2c)
     ns   = length(sl2ctest2)
     ntet = length(sl2ctest2[1])
-    I2 = Matrix{ComplexF64}(I, 2, 2)
+    I2   = Matrix{ComplexF64}(I, 2, 2)
 
-    su2triangle = [ [I2 for _ in 1:ntet] for _ in 1:ns ]
-    Gset = Set{Vector{Int}}(GaugeFixUpperTriangle)
-    Oset = Set{Vector{Int}}(oppositesl2c)
+    su2triangle = [[I2 for _ in 1:ntet] for _ in 1:ns]
 
-    opp_to_gauge = Dict{Vector{Int},Vector{Int}}()
+    # convert [s,t] -> (s,t)
+    gauge_keys = Set{Tuple{Int,Int}}((p[1], p[2]) for p in GaugeFixUpperTriangle)
+    opp_keys   = Set{Tuple{Int,Int}}((p[1], p[2]) for p in oppositesl2c)
+
+    # map opposite -> gauge
+    opp_to_gauge = Dict{Tuple{Int,Int},Tuple{Int,Int}}()
     for (gt, op) in zip(GaugeFixUpperTriangle, oppositesl2c)
-        opp_to_gauge[op] = gt
+        opp_to_gauge[(op[1], op[2])] = (gt[1], gt[2])
     end
 
-    for i in 1:ns
-        for j in 1:ntet
-            key = (i,j)
-            if key in Gset
-                su2triangle[i][j] = sl2c_to_su2(sl2ctest2[i][j])
-            elseif key in Oset
-                s0,t0 = opp_to_gauge[key]
-                su2triangle[i][j] = sl2c_to_su2(sl2ctest2[s0][t0])
+    for s in 1:ns
+        for t in 1:ntet
+            key = (s, t)
+
+            if key in gauge_keys
+                # println("gauge key detected: ", key)
+                su2triangle[s][t] = GaugeFixingSU.sl2c_to_su2(sl2ctest2[s][t])
+
+            elseif key in opp_keys
+                # println("opposite key detected: ", key)
+                (s0, t0) = opp_to_gauge[key]
+                su2triangle[s][t] = GaugeFixingSU.sl2c_to_su2(sl2ctest2[s0][t0])
             end
         end
     end
@@ -144,6 +151,20 @@ end
 # ------------------------------------------------------------
 # Build U^{-1} for SU(1,1)
 # ------------------------------------------------------------
+# function build_Uinverse(ns, ntet, lookup, gaugespacelike, su)
+#     I2 = Matrix{ComplexF64}(I,2,2)
+#     Uinverse = [ [I2 for _ in 1:ntet] for _ in 1:ns ]
+
+#     for k in 1:ns, i in 1:ntet
+#         key = (k,i)
+#         if haskey(lookup,key)
+#             p = lookup[key]
+#             s,t,j_sp = gaugespacelike[p]
+#             Uinverse[k][i] = inv(su[s][t][j_sp])
+#         end
+#     end
+#     return Uinverse
+# end
 function build_Uinverse(ns, ntet, lookup, gaugespacelike, su)
     I2 = Matrix{ComplexF64}(I,2,2)
     Uinverse = [ [I2 for _ in 1:ntet] for _ in 1:ns ]
@@ -152,7 +173,7 @@ function build_Uinverse(ns, ntet, lookup, gaugespacelike, su)
         key = (k,i)
         if haskey(lookup,key)
             p = lookup[key]
-            s,t,j_sp = gaugespacelike[p]
+            s,t,j_sp = gaugespacelike[p][1]
             Uinverse[k][i] = inv(su[s][t][j_sp])
         end
     end
@@ -187,24 +208,34 @@ end
 # ------------------------------------------------------------
 # Build U2 (phase fixing)
 # ------------------------------------------------------------
-function build_U2(ns, ntet, lookup, gaugetimelike, xi)
-    I2 = Matrix{ComplexF64}(I,2,2)
+function build_U2(ns::Int, ntet::Int,
+                         lookup::Dict{String,Int},
+                         gaugetimelike,
+                         xi)
+
+    I2 = Matrix{ComplexF64}(I, 2, 2)
     U2 = [ [I2 for _ in 1:ntet] for _ in 1:ns ]
 
     for k in 1:ns, i in 1:ntet
-        key = (k,i)
-        if haskey(lookup,key)
-            p = lookup[key]
-            s,t,j_tm = gaugetimelike[p]
-            X = xi[s][t][j_tm]
-            z = X[1][2]
-            φ = angle(z)
-            U2[k][i] = ComplexF64[
-                exp(im*φ/2)  0;
-                0            exp(-im*φ/2)
-            ]
-        end
+        key = string(k, "_", i)
+        haskey(lookup, key) || continue
+
+        pos = lookup[key]                 # this is the "pos" in Mathematica
+        v, t, f = gaugetimelike[pos][1]         # Gaugetimelike[[pos,1]] in MMA is a pair {s,t}
+
+        # Mathematica: bdyxitest3[[s,t,1,2]]
+        # Your xi[s][t] is a 2-vector spinor, so "component (1,2)" corresponds to the 2nd entry.
+        X = xi[k][i][f][1][2]
+        z = X
+
+        ϕ = angle(z)
+
+        U2[k][i] = ComplexF64[
+            exp(im * ϕ / 2)  0;
+            0                exp(-im * ϕ / 2)
+        ]
     end
+
     return U2
 end
 
