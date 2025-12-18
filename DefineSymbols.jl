@@ -284,7 +284,7 @@ function split_xi_variables(xi_mat, timelikeTetsPos, Gaugespacelike, Gaugetimeli
 
     # normalize lookup sets
     tl_set = Set(Tuple(p) for p in timelikeTetsPos)
-    gauge_set = Set(Tuple(p) for p in reduce(vcat, vcat(Gaugespacelike, Gaugetimelike)))
+    gauge_set = Set(Tuple(p) for p in Iterators.flatten(vcat(Gaugespacelike, Gaugetimelike)))
 
     var_xi    = Set{Py}()
     var_bdry  = Set{Py}()
@@ -401,8 +401,8 @@ function run_define_variables(geom)
     tetn0sign    = [geom.simplex[s].tetn0sign   for s in 1:ns]
 
     critical_data = compute_bdy_critical_data(geom)
-    gdataof       = critical_data.gdataof
-    zdataf       = critical_data.zdataf
+    gdataof = critical_data.gdataof
+    zdataf  = critical_data.zdataf
 
     if ns > 1
         sharedTetsPos = geom.connectivity[1]["sharedTetsPos"]
@@ -415,7 +415,7 @@ function run_define_variables(geom)
         Gaugespacelike        = geom.connectivity[1]["gaugespacelike"]
         timelike_pairs       = geom.connectivity[1]["timelike_pairs"]
 
-        timelikeTetsSharingPos = reduce(vcat, timelike_pairs)
+        timelikeTetsSharingPos = collect(Iterators.flatten(timelike_pairs))
     else
     # ---------- single simplex case ----------
         GaugeTet = [[1,1]]
@@ -430,18 +430,16 @@ function run_define_variables(geom)
         Gaugespacelike = Vector{Vector{Vector{Int}}}()
         timelikeTetsSharingPos = Vector{Vector{Vector{Int}}}()
 
-        for i in 1:ntet
-            for j in i+1:ntet
-                # two oriented faces
-                fwd = [1, i, j]
-                bwd = [1, j, i]
+        for i in 1:ntet, j in i+1:ntet
+            # two oriented faces
+            fwd = [1, i, j]
+            bwd = [1, j, i]
 
-                # kappa-positive one goes first
-                if kappa_all[1][i][j] == 1
-                    push!(OrderBDryFaces, [fwd, bwd])
-                else
-                    push!(OrderBDryFaces, [bwd, fwd])
-                end
+            # kappa-positive one goes first
+            if kappa_all[1][i][j] == 1
+                push!(OrderBDryFaces, [fwd, bwd])
+            else
+                push!(OrderBDryFaces, [bwd, fwd])
             end
         end
     end

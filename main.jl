@@ -1,15 +1,13 @@
 # ============================================================
 # main.jl — load geometry or compute from scratch
 # ============================================================
-using LinearAlgebra, Combinatorics
-using Printf
-using Dates
+using LinearAlgebra, Combinatorics, Printf, Dates, PythonCall
 
 # --- include all modules ---
 include("GeometryTypes.jl")          # defines GeometryDataset, GeometryCollection
 include("SimplexGeometry.jl")
 include("SpinAlgebra.jl")
-include("Volume.jl")
+include("volume.jl")
 include("TetraNormals.jl")
 include("DihedralAngles.jl")
 include("LorentzGroup.jl")
@@ -26,7 +24,9 @@ include("FaceXiMatching.jl")
 include("FaceMatchingChecks.jl")
 include("GaugeFixing.jl")
 include("CriticalPoints.jl")
-include("DefineVariables.jl")
+include("DefineSymbols.jl")
+include("SolveVars.jl")
+include("DefineAction.jl")
 
 using .GeometryTypes: GeometryDataset, GeometryCollection
 using .GeometryPipeline: run_geometry_pipeline
@@ -36,15 +36,19 @@ using .FourSimplexConnectivity: build_global_connectivity
 using .FaceXiMatching: run_face_xi_matching
 using .FaceMatchingChecks: check_all
 using .GaugeFixingSU
-using .CriticalPoints: compute_critical_data
-using .DefineVariables: run_define_variables
+using .CriticalPoints: compute_bdy_critical_data
+using .DefineSymbols: run_define_variables
+using .SolveVars: run_solver
+using .DefineAction: vertexaction
 
+sympy = pyimport("sympy")
 # ============================================================
 # 1. Ask user for connectivity list (list of vertex labels)
 # ============================================================
 
-println("\nEnter the list of simplices, e.g. [[1,2,3,4,5],[1,3,4,5,6]].")
-println("Empty line ends the input.")
+println("\nEnter the list of simplices, for example:")
+println("[[1,2,3,4,5],[1,3,4,5,6]]")
+println("Press Enter on an empty line to finish the input.")
 
 lines = String[]
 while true
@@ -61,7 +65,7 @@ catch e
     error("Could not parse simplices input:\n$e")
 end
 
-println("\nYou entered simplices:")
+println("\nYou entered the following simplices:")
 println(simplices)
 
 # number of simplices
@@ -77,13 +81,14 @@ sort!(all_vertices)
 
 Nverts = length(all_vertices)
 
-println("\nUnique vertex labels detected = ", all_vertices)
-println("Total vertices = $Nverts\n")
+println("\nUnique vertex labels detected:")
+println(all_vertices)
+println("Total number of vertices = $Nverts\n")
 
-println("Please enter coordinates for ALL vertices at once.")
-println("Each line should be:  t,x,y,z")
-println("Order: follow the sorted vertex list above.")
-println("Empty line ends input.\n")
+println("Please enter coordinates for all vertices.")
+println("Each line should have the format: t, x, y, z")
+println("Follow the order of the sorted vertex list shown above.")
+println("Press Enter on an empty line to finish the input.\n")
 
 vertex_coords = Dict{Int, Vector{Float64}}()
 
@@ -137,7 +142,7 @@ println("\n=== Geometry initialization complete ===\n")
 # 4. Consistency checks for each simplex
 # ============================================================
 
-println("Would you like to check consistency conditions for each simplex? (y/n)")
+println("Would you like to run consistency checks for each simplex? (y or n)")
 if lowercase(readline()) == "y"
     for (idx, simplex) in enumerate(geom.simplex)
         println("\n--- Checking simplex $idx ---")
@@ -155,7 +160,7 @@ end
 # ============================================================
 
 if ns > 1
-    println("\nConnect the simplices and run face matching? (y/n)")
+    println("\nConnect simplices and perform face matching? (y or n)")
     if lowercase(readline()) == "y"
 
         println("\nFixing global κ-sign orientation ...")
@@ -164,7 +169,7 @@ if ns > 1
         println("\nBuilding global connectivity ...")
         conn = build_global_connectivity(simplices, geom)
         push!(geom.connectivity, conn)
-        println("Connectivity built.")
+        println("Global connectivity constructed.")
 
         println("\nRunning face-ξ matching ...")
         run_face_xi_matching(geom)
@@ -176,15 +181,18 @@ if ns > 1
         run_su2_su11_gauge_fix(geom);
         println("\nGauge fixing finished.")
     else
-        println("\nSkipping connectivity and face matching.")
+        println("\nSkipping connectivity construction and face matching.")
     end
 else
-    println("\nOnly one simplex detected; skipping global connectivity.")
+    println("\nOnly one simplex detected. Global connectivity is skipped.")
 end
 
-# println("\nDefine variables and find the corresponding critical points ....")
-# println("\nEnter γ value: ")
+println("\nDefining symbols and separating boundary symbols from dynamical variables ...")
+run_define_variables(geom);
 
-# γ = parse(Float64, readline())
-# define_var = run_define_variables(geom; gamma = γ);
+println("\nComputing boundary data and critical points for all symbols ...")
+sol_vars, sol_bdry, γsym = run_solver(geom);
+println("The action contains $(length(sol_vars)) dynamical variables.")
+
+
 
