@@ -4,6 +4,10 @@
 using LinearAlgebra, Combinatorics, Printf, Dates, PythonCall
 
 # --- include all modules ---
+using LinearAlgebra, Combinatorics, Printf, Dates, PythonCall
+
+sympy = pyimport("sympy")
+
 include("GeometryTypes.jl")          # defines GeometryDataset, GeometryCollection
 include("SimplexGeometry.jl")
 include("SpinAlgebra.jl")
@@ -27,6 +31,7 @@ include("CriticalPoints.jl")
 include("DefineSymbols.jl")
 include("SolveVars.jl")
 include("DefineAction.jl")
+include("ComputeEOMs.jl")
 
 using .GeometryTypes: GeometryDataset, GeometryCollection
 using .GeometryPipeline: run_geometry_pipeline
@@ -40,6 +45,8 @@ using .CriticalPoints: compute_bdy_critical_data
 using .DefineSymbols: run_define_variables
 using .SolveVars: run_solver
 using .DefineAction: vertexaction
+using .DefineAction: run_action
+using .EOMs: compute_EOMs, zero_or_not
 
 sympy = pyimport("sympy")
 # ============================================================
@@ -187,12 +194,29 @@ else
     println("\nOnly one simplex detected. Global connectivity is skipped.")
 end
 
-println("\nDefining symbols and separating boundary symbols from dynamical variables ...")
-run_define_variables(geom);
+println("\nDefining symbols and separating boundary symbols from dynamical variables...")
+run_define_variables(geom)
 
-println("\nComputing boundary data and critical points for all symbols ...")
-sol_vars, sol_bdry, γsym = run_solver(geom);
+println("\nComputing boundary data and critical points for all symbols...")
+sol_vars, sol_bdry, γsym = run_solver(geom)
 println("The action contains $(length(sol_vars)) dynamical variables.")
 
+println("\nConstructing the action...")
+S = run_action(geom)
 
+println("\nSubstituting all boundary data into the action...")
+S_vars = S.xreplace(sol_bdry)
 
+println("\nEvaluating the action at the critical point...")
+expr   = S_vars.subs(sol_vars)
+S_simp = sympy.simplify(expr.evalf())
+println(S_simp)
+
+println("\nWould you like to check the equations of motion? (y/n)")
+if lowercase(strip(readline())) == "y"
+    println("\nComputing equations of motion at the critical point...")
+    dS_eval = compute_EOMs(S_vars, sol_vars; γ = γsym)
+    zero_or_not(dS_eval; tol = 1e-10)
+else
+    println("\nSkipping equations-of-motion check.")
+end

@@ -91,7 +91,7 @@ function getso13(Na::AbstractVector{<:Real})
 
     # exp(θ * Bnorm) ∈ SO(1,3)
     Λ = exp(dihedral * Bnorm)
-    return chop(Λ)
+    return Λ
 end
 
 # -------------------------------------------------------------

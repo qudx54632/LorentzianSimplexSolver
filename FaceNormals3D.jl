@@ -9,9 +9,7 @@ export getvertices3d, compute_unsigned_normal, getnabout
 #   Compute 3D coordinates of tetrahedron vertices by applying
 #   inverse SO(1,3) transformation and dropping 1 component.
 # ------------------------------------------------------------
-function getvertices3d(tetpoints::Vector{Vector{Float64}},
-                       so13soln::Matrix{Float64},
-                       sgndet::Int)
+function getvertices3d(tetpoints, so13soln, sgndet::Int)
 
     invΛ = inv(so13soln)
 
@@ -97,9 +95,7 @@ end
 # Returns:
 #    Vector{Vector{Float64}} length 4 → one normal per face
 # ------------------------------------------------------------
-function getnabout(tetpoints::Vector{Vector{Float64}},
-                   sgndet::Int,
-                   so13soln::Matrix{Float64})
+function getnabout(tetpoints, sgndet::Int, so13soln)
 
     # Step 1: 3D embedded vertices
     verts3D = getvertices3d(tetpoints, so13soln, sgndet)

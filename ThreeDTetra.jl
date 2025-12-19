@@ -34,8 +34,7 @@ end
 # ----------------------------------------------------------
 # get3dvec: just the transformed 4 → 4 vectors, no dropping
 # ----------------------------------------------------------
-function get3dvec(tetedgevec::Vector{Vector{Float64}},
-                  tetsol13::Matrix{Float64})
+function get3dvec(tetedgevec, tetsol13)
     invΛ = inv(tetsol13)
     return chop([invΛ * v for v in tetedgevec])
 end
@@ -51,8 +50,7 @@ end
 #   spacelike tet  → zero_pos = 1
 #   timelike tet   → zero_pos = 4
 # ----------------------------------------------------------
-function get3dtet(tetedgevec::Vector{Vector{Float64}},
-                  tetsol13::Matrix{Float64})
+function get3dtet(tetedgevec, tetsol13)
 
     # ------------------------------------------------------------
     # Step 1: transform edges (Λ⁻¹ v)
@@ -109,11 +107,11 @@ end
 # If sgndet > 0 → prepend 0
 # If sgndet < 0 → append 0
 # ----------------------------------------------------------
-function threetofour(n::Vector{Float64}, sgndet::Int)
+function threetofour(n, sgndet::Int)
     if sgndet > 0
-        return vcat([0.0], n)
+        return vcat([0], n)
     else
-        return vcat(n, [0.0])
+        return vcat(n, [0])
     end
 end
 
@@ -125,17 +123,17 @@ end
 #
 # Output → B ⋅ η 
 # ----------------------------------------------------------
-function getbivec(n1::Vector{Float64}, n2::Vector{Float64})
+function getbivec(n1, n2)
     B = zeros(Float64, 4,4)
     ηv1 = eta * n1
     ηv2 = eta * n2
 
     for i in 1:4, j in 1:4
-        s = 0.0
+        s = 0
         for k in 1:4, l in 1:4
             s += ε[i,j,k,l] * ηv1[k] * ηv2[l]
         end
-        B[i,j] = 0.5 * s
+        B[i,j] = 1/2 * s
     end
 
     return B * eta
