@@ -1,27 +1,25 @@
 # ============================================================
 # main.jl — load geometry or compute from scratch
 # ============================================================
-using LinearAlgebra, Combinatorics, Printf, Dates, PythonCall
-
-# --- include all modules ---
-using LinearAlgebra, Combinatorics, Printf, Dates, PythonCall
+using LinearAlgebra, Combinatorics, Printf, Dates, PythonCall, Symbolics
 
 sympy = pyimport("sympy")
 
-include("GeometryTypes.jl")          # defines GeometryDataset, GeometryCollection
-include("SimplexGeometry.jl")
+include("PrecisionUtils.jl")
 include("SpinAlgebra.jl")
-include("volume.jl")
+include("SimplexGeometry.jl")
 include("TetraNormals.jl")
 include("DihedralAngles.jl")
 include("LorentzGroup.jl")
 include("ThreeDTetra.jl")
+include("volume.jl")
 include("Su2Su11FromBivector.jl")
 include("XiFromSU.jl")
 include("FaceNormals3D.jl")
 include("KappaFromNormals.jl")
-include("GeometryConsistency.jl")
+include("GeometryTypes.jl")          # defines GeometryDataset, GeometryCollection
 include("GeometryPipeline.jl")
+include("GeometryConsistency.jl")
 include("KappaOrientation.jl")
 include("FourSimplexConnectivity.jl")
 include("FaceXiMatching.jl")
@@ -29,10 +27,12 @@ include("FaceMatchingChecks.jl")
 include("GaugeFixing.jl")
 include("CriticalPoints.jl")
 include("DefineSymbols.jl")
-include("SolveVars.jl")
 include("DefineAction.jl")
-include("ComputeEOMs.jl")
+include("SolveVars.jl")
+include("SymbolicToJulia.jl")
+include("EOMsHessian.jl")
 
+using .PrecisionUtils: set_big_precision!, parse_numeric_line, set_tolerance!
 using .GeometryTypes: GeometryDataset, GeometryCollection
 using .GeometryPipeline: run_geometry_pipeline
 using .GeometryConsistency: check_sl2c_parallel_transport, check_so13_parallel_transport, check_closure_bivectors
@@ -40,17 +40,29 @@ using .KappaOrientation: fix_kappa_signs!
 using .FourSimplexConnectivity: build_global_connectivity
 using .FaceXiMatching: run_face_xi_matching
 using .FaceMatchingChecks: check_all
-using .GaugeFixingSU
+using .GaugeFixingSU: run_su2_su11_gauge_fix
 using .CriticalPoints: compute_bdy_critical_data
 using .DefineSymbols: run_define_variables
+using .DefineAction: compute_action
 using .SolveVars: run_solver
-using .DefineAction: vertexaction
-using .DefineAction: run_action
-using .EOMs: compute_EOMs, zero_or_not
+using .SymbolicToJulia: build_action_function, build_gradient_functions, build_hessian_functions, build_argument_vector
+using .EOMsHessian: compute_EOMs, compute_Hessian, check_EOMs, evaluate_hessian
 
-sympy = pyimport("sympy")
 # ============================================================
-# 1. Ask user for connectivity list (list of vertex labels)
+# 1. Precision choice
+# ============================================================
+
+const ScalarT = Float64 # or BigFloat
+
+if ScalarT === BigFloat
+    set_big_precision!(256)
+    set_tolerance!(1e-20)
+else
+    set_tolerance!(1e-10)
+end
+
+# ============================================================
+# 2. Read simplices
 # ============================================================
 
 println("\nEnter the list of simplices, for example:")
@@ -72,49 +84,35 @@ catch e
     error("Could not parse simplices input:\n$e")
 end
 
-println("\nYou entered the following simplices:")
-println(simplices)
-
-# number of simplices
 ns = length(simplices)
 println("\nNumber of simplices detected = $ns")
-
-# ============================================================
-# 2. Read ALL vertex coordinates in one block of input
-# ============================================================
+println("Simplices = ", simplices)
 
 all_vertices = unique(Iterators.flatten(simplices))
 sort!(all_vertices)
-
 Nverts = length(all_vertices)
 
-println("\nUnique vertex labels detected:")
-println(all_vertices)
+println("\nUnique vertex labels detected: ", all_vertices)
 println("Total number of vertices = $Nverts\n")
-
+# ============================================================
+# 3. Read vertex coordinates
+# ============================================================
 println("Please enter coordinates for all vertices.")
-println("Each line should have the format: t, x, y, z")
-println("Follow the order of the sorted vertex list shown above.")
-println("Press Enter on an empty line to finish the input.\n")
+println("Each line format: t, x, y, z  (commas or spaces both ok)")
+println("Follow the order of the sorted vertex list shown above.\n")
 
-vertex_coords = Dict{Int, Vector{Float64}}()
+vertex_coords = Dict{Int, Vector{ScalarT}}()
 
 lines = String[]
 for i in 1:Nverts
     line = readline()
-    isempty(strip(line)) && break
+    isempty(strip(line)) && error("Empty line encountered at vertex $i. Need $Nverts coordinate lines.")
     push!(lines, line)
 end
 
-if length(lines) != Nverts
-    error("You entered $(length(lines)) lines, but $Nverts vertices are required.")
-end
-
-# Parse all coordinates at once
 for (i, v) in enumerate(all_vertices)
-    parts = split(lines[i], ',')
-    length(parts) == 4 || error("Vertex $v: expected 4 numbers.")
-    nums = parse.(Float64, strip.(parts))
+    nums = parse_numeric_line(lines[i], ScalarT)  
+    length(nums) == 4 || error("Vertex $v: expected 4 numbers, got $(length(nums))")
     vertex_coords[v] = nums
 end
 
@@ -124,32 +122,29 @@ for v in all_vertices
 end
 
 # ============================================================
-# 3. Construct boundary points for each simplex
+# 4. Build geometry
 # ============================================================
 
-println("\n=== Building geometry for each simplex ===\n")
-
-datasets = GeometryDataset[]
+datasets = GeometryDataset{ScalarT}[]
 
 for (s, simplex) in enumerate(simplices)
     println("\n--- Processing simplex $s with vertices $simplex ---")
 
     # Build boundary points from user’s vertex coordinates
     bdypoints = [vertex_coords[v] for v in simplex]
-
     # Run geometry pipeline
     ds = run_geometry_pipeline(bdypoints)
     push!(datasets, ds)
 end
 
-geom = GeometryCollection(datasets)
+geom = GeometryTypes.GeometryCollection(datasets);
 println("\n=== Geometry initialization complete ===\n")
 
 # ============================================================
-# 4. Consistency checks for each simplex
+# 5. Consistency checks for each simplex
 # ============================================================
 
-println("Would you like to run consistency checks for each simplex? (y or n)")
+println("Would you like to check parallel transport conditions and closure conditions for each simplex? (y or n)")
 if lowercase(readline()) == "y"
     for (idx, simplex) in enumerate(geom.simplex)
         println("\n--- Checking simplex $idx ---")
@@ -161,10 +156,9 @@ else
     println("\nSkipping consistency checks.")
 end
 
-# ============================================================
-# 5. Connect simplices, build global connectivity, match faces
-#    and perform gauge fixing
-# ============================================================
+# =====================================================================================
+# 6. Connect simplices, build global connectivity, match faces and perform gauge fixing
+# =====================================================================================
 
 if ns > 1
     println("\nConnect simplices and perform face matching? (y or n)")
@@ -197,26 +191,45 @@ end
 println("\nDefining symbols and separating boundary symbols from dynamical variables...")
 run_define_variables(geom)
 
+
 println("\nComputing boundary data and critical points for all symbols...")
-sol_vars, sol_bdry, γsym = run_solver(geom)
-println("The action contains $(length(sol_vars)) dynamical variables.")
+sd, _ = run_solver(geom)
+println("The action contains $(length(sd.labels_vars)) dynamical variables.")
 
 println("\nConstructing the action...")
-S = run_action(geom)
+S = compute_action(geom)
 
-println("\nSubstituting all boundary data into the action...")
-S_vars = S.xreplace(sol_bdry)
+println("\nCompiling action into a Julia function...")
+S_fn, labels = build_action_function(S, sd)
 
 println("\nEvaluating the action at the critical point...")
-expr   = S_vars.subs(sol_vars)
-S_simp = sympy.simplify(expr.evalf())
-println(S_simp)
+@variables γ
+args = build_argument_vector(sd, labels, γ);
+S_sym = simplify(S_fn(args...))
+println("The action at the critical point is $S_sym.")
 
 println("\nWould you like to check the equations of motion? (y/n)")
 if lowercase(strip(readline())) == "y"
-    println("\nComputing equations of motion at the critical point...")
-    dS_eval = compute_EOMs(S_vars, sol_vars; γ = γsym)
-    zero_or_not(dS_eval; tol = 1e-10)
+    println("\nComputing equations of motion (symbolic)...")
+    dS = compute_EOMs(S, sd)
+    println("\nChecking equations of motion...")
+    grad_fns = build_gradient_functions(dS, sd)
+    check_EOMs(grad_fns, sd; γ = one(ScalarT))
 else
-    println("\nSkipping equations-of-motion check.")
+    println("\nSkipping equations-of-motion and Hessian computing.")
 end
+
+println("\nWould you like to compute Hessian? (y/n)")
+if lowercase(strip(readline())) == "y"
+    println("\nComputing Hessian matrix (symbolic)...")
+    H  = compute_Hessian(S, sd)
+    println("\nEvaluating Hessian matrix...")
+    hess_fns = build_hessian_functions(H, sd);
+    H_eval, _ = evaluate_hessian(hess_fns, sd; γ = one(ScalarT))
+    H_det = det(H_eval)
+    println("The determinant of Hessian matrix is $H_det.")
+else
+    println("\nSkipping Hessian computing.")
+end
+println("\n=== Program finished ===\n")
+

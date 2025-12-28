@@ -1,6 +1,7 @@
 module FaceNormals3D
 
 using LinearAlgebra
+using ..PrecisionUtils: get_tolerance
 
 export getvertices3d, compute_unsigned_normal, getnabout
 
@@ -9,11 +10,12 @@ export getvertices3d, compute_unsigned_normal, getnabout
 #   Compute 3D coordinates of tetrahedron vertices by applying
 #   inverse SO(1,3) transformation and dropping 1 component.
 # ------------------------------------------------------------
-function getvertices3d(tetpoints, so13soln, sgndet::Int)
+function getvertices3d(tetpoints::Vector{<:AbstractVector{T}},
+                       so13soln::AbstractMatrix{T},
+                       sgndet::Int) where {T<:Real}
 
     invΛ = inv(so13soln)
-
-    verts3d = Vector{Vector{Float64}}()
+    verts3d = Vector{Vector{T}}()
 
     for P4 in tetpoints
         P3 = invΛ * P4
@@ -27,112 +29,97 @@ function getvertices3d(tetpoints, so13soln, sgndet::Int)
     return verts3d
 end
 
-
 # ------------------------------------------------------------
 # metric(3D): diag(1,1,1) for spacelike tetra
 #             diag(-1,1,1) for timelike tetra
 # ------------------------------------------------------------
-function face_metric(sgndet)
-    sgndet == 1 ? Diagonal([1.0,1.0,1.0]) : Diagonal([-1.0,1.0,1.0])
+function face_metric(::Type{T}, sgndet::Int) where {T<:Real}
+    z = zero(T)
+    o = one(T)
+    sgndet == 1 ? Diagonal(T[o, o, o]) : Diagonal(T[-o, o, o])
 end
 
+# ------------------------------------------------------------
+# Solve for face-normal of a triangular face (unsigned)
+# ------------------------------------------------------------
+function compute_unsigned_normal(v1::AbstractVector{T},
+                                 v2::AbstractVector{T},
+                                 v3::AbstractVector{T},
+                                 metric::AbstractMatrix{T}) where {T<:Real}
 
-# ------------------------------------------------------------
-# Solve for face-normal of a triangular face
-# Inputs:
-#    v1,v2,v3 — 3D vertex coordinates of face
-#    metric   — 3×3 metric diag(±1,1,1)
-#
-# Output:
-#    unit 3-vector normal (unsigned)
-# ------------------------------------------------------------
-function compute_unsigned_normal(v1, v2, v3, metric)
-    # Edge vectors
+    tol = T(get_tolerance())
+
     e1 = v2 .- v1
     e2 = v3 .- v1
 
-    # Euclidean cross product first (produces covector orthogonal under δ_ij)
+    # Euclidean cross product
     c = cross(e1, e2)
 
-    if norm(c) < 1e-14
-        error("compute_unsigned_normal: degenerate triangle.")
-    end
+    norm_c = norm(c)
+    norm_c > tol || error("compute_unsigned_normal: degenerate triangle.")
 
-    # Convert to vector orthogonal under metric η : nᵀ η e_i = 0
+    # Convert covector to vector under metric
     n_raw = metric * c
 
-    # Normalize under metric
-    normsq = abs(n_raw' * metric * n_raw)
-    if normsq < 1e-20
-        error("compute_unsigned_normal: metric-normalized norm too small.")
-    end
+    normsq = abs((n_raw' * metric * n_raw)[1])
+    normsq > tol || error("compute_unsigned_normal: metric norm too small.")
 
     return n_raw / sqrt(normsq)
 end
 
-
 # ------------------------------------------------------------
-# Compute whether a point lies inside the tetrahedron
-# Using barycentric coordinates
+# Barycentric test: point inside tetrahedron
 # ------------------------------------------------------------
-function point_inside_tetra(point, verts3d)
+function point_inside_tetra(point::AbstractVector{T},
+                            verts3d::Vector{<:AbstractVector{T}}) where {T<:Real}
 
-    A = hcat(verts3d...)       # 3×4 matrix
-    A = vcat(A, ones(1,4))     # 4×4 barycentric matrix
-    b = vcat(point, 1.0)
+    tol = T(get_tolerance())
+
+    A = hcat(verts3d...)                    # 3×4
+    A = vcat(A, fill(one(T), 1, 4))         # 4×4
+    b = vcat(point, one(T))
 
     α = A \ b
-    return all(α .>= -1e-12)
+    return all(α .>= -tol)
 end
-
 
 # ------------------------------------------------------------
 # Main function: compute OUTGOING face normals
-# tetpoints: 4 points in 4D
-# sgndet: signature of tetra
-# so13soln: SO(1,3) matrix Λ
-#
-# Returns:
-#    Vector{Vector{Float64}} length 4 → one normal per face
 # ------------------------------------------------------------
-function getnabout(tetpoints, sgndet::Int, so13soln)
+function getnabout(tetpoints::Vector{<:AbstractVector{T}},
+                   sgndet::Int,
+                   so13soln::AbstractMatrix{T}) where {T<:Real}
 
-    # Step 1: 3D embedded vertices
+    tol = T(get_tolerance())
+
+    # Step 1: embedded 3D vertices
     verts3D = getvertices3d(tetpoints, so13soln, sgndet)
 
-    metric = face_metric(sgndet)
+    metric = face_metric(T, sgndet)
 
-    # Faces of tetrahedron (indices)
-    faces = [[1,2,3], [1,2,4], [1,3,4], [2,3,4]]
+    faces = ((1,2,3), (1,2,4), (1,3,4), (2,3,4))
 
-    unsigned_normals = Vector{Vector{Float64}}()
-    outgoing_normals = Vector{Vector{Float64}}()
+    unsigned_normals = Vector{Vector{T}}()
+    centers = Vector{Vector{T}}()
 
-    centers = Vector{Vector{Float64}}()
+    # Step 2: unsigned normals and face centers
+    for (i,j,k) in faces
+        v1, v2, v3 = verts3D[i], verts3D[j], verts3D[k]
 
-    # Step 2: compute unsigned normal & face centers
-    for f in faces
-        i,j,k = f
-        v1,v2,v3 = verts3D[i], verts3D[j], verts3D[k]
-
-        n_unsigned = compute_unsigned_normal(v1,v2,v3,metric)
+        n_unsigned = compute_unsigned_normal(v1, v2, v3, metric)
         push!(unsigned_normals, n_unsigned)
 
-        # face barycenter
-        push!(centers, (v1 .+ v2 .+ v3) ./ 3)
+        push!(centers, (v1 .+ v2 .+ v3) ./ T(3))
     end
 
-    # Step 3: decide outgoing orientation
+    outgoing_normals = Vector{Vector{T}}()
+    ε = sqrt(tol)
+
+    # Step 3: outgoing orientation
     for (n, c) in zip(unsigned_normals, centers)
+        p_out = c .+ ε * n
 
-        ε = 1e-2
-
-        p_out = c .+ ε*n
-        p_in  = c .- ε*n
-
-        # if p_out is OUTSIDE tetra → n is outgoing
         if point_inside_tetra(p_out, verts3D)
-            # wrong direction → flip
             push!(outgoing_normals, -n)
         else
             push!(outgoing_normals, n)
@@ -141,6 +128,5 @@ function getnabout(tetpoints, sgndet::Int, so13soln)
 
     return outgoing_normals
 end
-
 
 end # module

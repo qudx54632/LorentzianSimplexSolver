@@ -2,40 +2,52 @@ module GeometryTypes
 
 export GeometryDataset, GeometryCollection
 
-mutable struct GeometryDataset
-    solgsl2c::Vector{Matrix{ComplexF64}}
-    solgso13::Vector{Matrix{ComplexF64}}
+# ============================================================
+# GeometryDataset: all data for one 4-simplex
+# ============================================================
+mutable struct GeometryDataset{T<:Real}
 
-    bdyxi::Vector{Vector{Vector{Vector{ComplexF64}}}}
-    nabout::Vector{Vector{Vector{Float64}}}
-    nabfrombivec::Vector{Vector{Vector{Float64}}}
+    # Group elements
+    solgsl2c::Vector{Matrix{Complex{T}}}
+    solgso13::Vector{Matrix{T}}
 
-    bdysu::Vector{Vector}
-    bdybivec4d55::Vector{Vector{Matrix{ComplexF64}}}
-    bdybivec55::Vector{Vector{Matrix{ComplexF64}}}
+    # Boundary spinors and normals
+    bdyxi::Vector{Vector{Vector{Vector{Complex{T}}}}}
+    nabout::Vector{Vector{Vector{T}}}
+    nabfrombivec::Vector{Vector{Vector{T}}}
 
-    dihedrals::Vector{Vector{Float64}}
-    areas::Vector{Vector{Float64}}
+    # Boundary group data
+    bdysu::Vector{Vector{Matrix{Complex{T}}}}
+    bdybivec4d55::Vector{Vector{Matrix{T}}}
+    bdybivec55::Vector{Vector{Matrix{Complex{T}}}}
+
+    # Geometry
+    dihedrals::Vector{Vector{T}}
+    areas::Vector{Vector{T}}
     kappa::Vector{Vector{Int}}
     tetareasign::Vector{Vector{Int}}
     tetn0sign::Vector{Vector{Int}}
 
-    tetnormalvec::Vector{Vector{Float64}}
+    # Tetrahedron data
+    tetnormalvec::Vector{Vector{T}}
     sgndet::Vector{Int}
 
-    zdataf::Vector{Vector{Vector{ComplexF64}}}
+    # Auxiliary / critical data
+    zdataf::Vector{Vector{Vector{Complex{T}}}}
 end
 
-mutable struct GeometryCollection
-    simplex::Vector{GeometryDataset}
+# ============================================================
+# GeometryCollection: multiple simplices + global data
+# ============================================================
+mutable struct GeometryCollection{T<:Real}
+    simplex::Vector{GeometryDataset{T}}
     connectivity::Vector{Dict{String, Any}}
-
-    # >>> ADD THESE <<<
     crit::Dict{Symbol, Any}
     varias::Dict{Symbol, Any}
 end
 
-GeometryCollection(simplex::Vector{GeometryDataset}) =
-    GeometryCollection(simplex, Dict{String,Any}[], Dict{Symbol,Any}(), Dict{Symbol,Any}())
+# Convenience constructor
+GeometryCollection(simplex::Vector{GeometryDataset{T}}) where {T<:Real} =
+    GeometryCollection{T}(simplex, Dict{String,Any}[], Dict{Symbol,Any}(), Dict{Symbol,Any}())
 
 end # module

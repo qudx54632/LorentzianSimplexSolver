@@ -6,7 +6,7 @@ using ..SpinAlgebra: σ3
 using PythonCall
 sympy = pyimport("sympy")
 
-export vertexaction, γsym, run_action
+export γsym, compute_action
 
 I      = sympy.I
 spMatrix = sympy.Matrix   # SymPy matrix constructor
@@ -398,7 +398,7 @@ function build_metaxikappaf(sgndet, tetareasign, tetn0signtest3)
     ntet = 5
 
     Id2  = sympy.eye(2)
-    σ3py = spMatrix(σ3)
+    σ3py = spMatrix(σ3(Int))
 
     # metaxikappaf[k][i][j] = (meta, signzz)
     metaxikappaf = Vector{Vector{Vector{Tuple{Py,Int}}}}(undef, ns)
@@ -469,7 +469,7 @@ function vertexaction(j_mat1, xi_mat1, z_mat1, g_mat1,
 
     ntet = 5
     Id2  = sympy.eye(2)
-    σ3py = spMatrix(σ3)
+    σ3py = spMatrix(σ3(Int))
 
     # terms = Vector{Tuple{Int,Int,Py}}()  # (i, j, jf*he)
     act   = Py(0)
@@ -500,7 +500,7 @@ function vertexaction(j_mat1, xi_mat1, z_mat1, g_mat1,
 end
 
 
-function run_action(geom)
+function compute_action(geom)
 
     ns = length(geom.simplex)
 

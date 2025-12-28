@@ -1,11 +1,16 @@
 module LorentzGroup
 
 using LinearAlgebra
-using ..SpinAlgebra: eta, Jvec, jjvec
+using GenericLinearAlgebra
+using ..PrecisionUtils: get_tolerance
+using ..SpinAlgebra: Params, Jvec, jjvec,  σ1, imag_unit
 using ..Dihedral: theta_ab
-using ..TetraNormals: chop
 
 export getso13, getsl2c
+
+η(::Type{T}) where {T<:Real} = Params{T}().eta
+J(::Type{T}) where {T<:Real} = Jvec(T)
+jj(::Type{T}) where {T<:Real} = jjvec(T)
 
 # -------------------------------------------------------------
 # Helper: trace
@@ -15,15 +20,17 @@ tr(A) = LinearAlgebra.tr(A)
 # -------------------------------------------------------------
 # Helper: Minkowski norm squared
 # -------------------------------------------------------------
-minkowski_norm2(v::AbstractVector) = v' * eta * v
+minkowski_norm2(v::AbstractVector{T}) where {T<:Real} = (v' * η(T) * v)[1]
 
 # -------------------------------------------------------------
 # Helper: approximate vector comparison (for special cases)
 # -------------------------------------------------------------
-function vec_is(a::AbstractVector, b::NTuple{4,Real}; atol=1e-12)
+
+function vec_is(a::AbstractVector{T}, b::NTuple{4,Real}; atol=get_tolerance()) where {T<:Real}
     length(a) == 4 || return false
+    tol = T(atol)
     for i in 1:4
-        if abs(a[i] - float(b[i])) > atol
+        if !isapprox(a[i], T(b[i]), atol=tol)
             return false
         end
     end
@@ -37,144 +44,150 @@ end
 # a,b are 4-vectors (Minkowski)
 # Returns a 4×4 matrix representing a bivector in so(1,3).
 # -------------------------------------------------------------
-function wedge(a::AbstractVector, b::AbstractVector)
+function wedge(a::AbstractVector{T}, b::AbstractVector{T}) where {T<:Real}
     @assert length(a) == 4 && length(b) == 4
     B = a * b' .- b * a'
-    return B * eta
+    return B * η(T)
+end
+
+function exp_so13(θ::T, B::AbstractMatrix{T}) where {T<:Real}
+    I4 = Matrix{T}(I, 4, 4)
+    B2 = B * B
+    σ = tr(B2)
+
+    if σ > zero(T)
+        # boost
+        return I4 + sinh(θ) * B + (cosh(θ) - one(T)) * B2
+    else
+        # rotation
+        return I4 + sin(θ) * B + (one(T) - cos(θ)) * B2
+    end
 end
 
 # -------------------------------------------------------------
 # Compute SO(1,3) element Λ such that Λ * N_ref = N_a
 # -------------------------------------------------------------
-function getso13(Na::AbstractVector{<:Real})
-    Na = collect(Float64, Na)
+function getso13(Na::AbstractVector{T}) where {T<:Real}
+    Na = collect(T, Na)
     Na2 = minkowski_norm2(Na)
-    Nasign = round(Int, Na2)   # should be -1 (timelike) or +1 (spacelike)
 
-    # Reference normal:
-    #   if timelike (Nasign == -1): Nref = (±1,0,0,0) with sign = sign(Na[1])
-    #   if spacelike (Nasign == +1): Nref = (0,0,0,1)
+    tol = T(get_tolerance())
+    Nasign = abs(Na2 + one(T)) < tol ? -1 :
+             abs(Na2 - one(T)) < tol ?  1 :
+             error("Na not unit: Na2=$Na2")
+
+    # Reference normal
     ref = if Nasign == -1
-        Na[1] > 0 ? [1, 0, 0, 0] : [-1, 0, 0, 0]
+        Na[1] > zero(T) ? T[one(T), zero(T), zero(T), zero(T)] :
+                          T[-one(T), zero(T), zero(T), zero(T)]
     else
-        [0, 0, 0, 1]
+        T[zero(T), zero(T), zero(T), one(T)]
     end
 
     # Special exact cases (identity / simple reflection)
-    if vec_is(Na, (1, 0, 0, 0)) ||
-       vec_is(Na, (0, 0, 0, 1)) ||
-       vec_is(Na, (-1, 0, 0, 0))
-        return Matrix{Float64}(I, 4, 4)
-    elseif vec_is(Na, (0, 0, 0, -1))
-        # DiagonalMatrix[{1,1,-1,-1}]
-        return Matrix(Diagonal([1, 1, -1, -1]))
+    if vec_is(Na, (1,0,0,0); atol=tol) || vec_is(Na, (0,0,0,1); atol=tol) || vec_is(Na, (-1,0,0,0); atol=tol)
+        return Matrix{T}(I, 4, 4)
+    elseif vec_is(Na, (0,0,0,-1); atol=tol)
+        return Matrix(Diagonal(T[one(T), one(T), -one(T), -one(T)]))
     end
 
     # General case
-    # Determine dihedral angle θ_ref,a
-    θ = theta_ab(ref, Na)
+    θ = theta_ab(ref, Na)             # returns T
+    dihedral = Nasign == -1 ? abs(θ) : -θ
 
-    dihedral = if Nasign == -1
-        # timelike: |θ_ref,e|
-        abs(θ)
-    else
-        # spacelike: -θ_ref,e
-        -θ
-    end
-
-    # bivector B = Nref ∧ Na
     B = wedge(ref, Na)
 
-    # normalized bivector B / |B|
-    normB = sqrt(abs(1/2 * tr(B * B)))
+    normB = sqrt(abs(tr(B * B) / (T(2))))
     Bnorm = B / normB
 
-    # exp(θ * Bnorm) ∈ SO(1,3)
-    Λ = exp(dihedral * Bnorm)
+    Λ = exp_so13(dihedral, Bnorm)
     return Λ
 end
 
 # -------------------------------------------------------------
 # Spin-1/2 rep of bivector: B -> 2x2 matrix in sl(2,C)
 # -------------------------------------------------------------
-function bivec1tohalf(bivec::AbstractMatrix)
+function bivec1tohalf(bivec::AbstractMatrix{T}) where {T<:Real}
     # coefficients α_i, β_i
-    coeffs = ComplexF64[]
+    coeffs = Vector{Complex{T}}(undef, 6)
 
     # first 3: + Tr(B J_i)
     for i in 1:3
-        push!(coeffs, tr(bivec * Jvec[i]))
+        coeffs[i] = tr(bivec * J(T)[i])
     end
 
     # last 3: - Tr(B J_i) for i=4..6
     for i in 4:6
-        push!(coeffs, -tr(bivec * Jvec[i]))
+        coeffs[i] = -tr(bivec * J(T)[i])
     end
 
-    coeffs .*= 1/2
+    coeffs .*= (one(T) / T(2))
 
     # linear combination Σ coeff_i * jjvec[i]
-    M = zeros(ComplexF64, 2, 2)
+    M = zeros(Complex{T}, 2, 2)
     for i in 1:6
-        M .+= coeffs[i] .* jjvec[i]
+        M .+= coeffs[i] .* jj(T)[i]
     end
     return M
 end
 
 
-# -------------------------------------------------------------
-# Pauli σ1 for special SL(2,C) case
-# -------------------------------------------------------------
-const σ1 = [0 + 0im  1 + 0im;
-            1 + 0im  0 + 0im]
+# exp(θ B) for 2×2 where B^2 is proportional to I
+function exp2x2_from_square(θ::T, B::AbstractMatrix{Complex{T}}) where {T<:Real}
+    I2 = Matrix{Complex{T}}(I, 2, 2)
+    B2 = B * B
+    α = real(tr(B2)) / T(2)
+
+    tol = T(get_tolerance())
+
+    if abs(α) < tol
+        return I2 + θ * B
+    elseif α > zero(T)
+        s = sqrt(α)
+        return cosh(θ*s) * I2 + (sinh(θ*s)/s) * B
+    else
+        s = sqrt(-α)
+        return cos(θ*s) * I2 + (sin(θ*s)/s) * B
+    end
+end
 
 # -------------------------------------------------------------
 # Compute SL(2,C) element g such that
 # it corresponds to the same Lorentz transform as getso13(Na)
 # -------------------------------------------------------------
-function getsl2c(Na::AbstractVector{<:Real})
-    Na = collect(Float64, Na)
+function getsl2c(Na::AbstractVector{T}) where {T<:Real}
+    Na = collect(T, Na)
     Na2 = minkowski_norm2(Na)
-    Nasign = round(Int, Na2)
 
-    # Reference normal as in getso13
+    tol = T(get_tolerance())
+    Nasign = abs(Na2 + one(T)) < tol ? -1 :
+             abs(Na2 - one(T)) < tol ?  1 :
+             error("Na not unit: Na2=$Na2")
+
     ref = if Nasign == -1
-        Na[1] > 0 ? [1, 0, 0, 0] : [-1, 0, 0, 0]
+        Na[1] > zero(T) ? T[one(T),zero(T),zero(T),zero(T)] :
+                          T[-one(T),zero(T),zero(T),zero(T)]
     else
-        [0, 0, 0, 1]
+        T[zero(T),zero(T),zero(T),one(T)]
     end
 
     # Special cases
-    if vec_is(Na, (1, 0, 0, 0)) ||
-       vec_is(Na, (0, 0, 0, 1)) ||
-       vec_is(Na, (-1, 0, 0, 0))
-        return Matrix{ComplexF64}(I, 2, 2)
-    elseif vec_is(Na, (0, 0, 0, -1))
-        # I * PauliMatrix[1]
-        return 1im * σ1
+    if vec_is(Na, (1,0,0,0); atol=tol) || vec_is(Na, (0,0,0,1); atol=tol) || vec_is(Na, (-1,0,0,0); atol=tol)
+        return Matrix{Complex{T}}(I, 2, 2)
+    elseif vec_is(Na, (0,0,0,-1); atol=tol)
+        i = imag_unit(T)
+        return i * Complex{T}.(σ1(T))
     end
 
-    # General case
     θ = theta_ab(ref, Na)
+    dihedral = Nasign == -1 ? abs(θ) : -θ
 
-    dihedral = if Nasign == -1
-        abs(θ)
-    else
-        -θ
-    end
-
-    # bivector in vector rep
     B = wedge(ref, Na)
-
-    # normalized bivector
-    normB = sqrt(abs(1/2 * tr(B * B)))
+    normB = sqrt(abs(tr(B * B) / (T(2))))
     Bnorm = B / normB
 
-    # spin-1/2 representation of Bnorm
-    Bhalf = bivec1tohalf(Bnorm)
-
-    # exp(θ * Bhalf) ∈ SL(2,C)
-    g = exp(dihedral * Bhalf)
+    Bhalf = bivec1tohalf(Bnorm)       # Complex{T} 2×2
+    g = exp2x2_from_square(dihedral, Bhalf)
     return g
 end
 

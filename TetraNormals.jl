@@ -2,44 +2,33 @@ module TetraNormals
 
 using LinearAlgebra
 using Combinatorics
-using ..SpinAlgebra: eta   # reuse Minkowski metric
-using ..SimplexGeometry: edge_or, tet_order
+using ..SpinAlgebra: Params
+using ..SimplexGeometry: edge_or
+using ..PrecisionUtils: get_tolerance
 
-export minkowski_norm, tet_normal, get4dnormal, chop, compute_edgevec
+export minkowski_norm, tet_normal, get4dnormal, compute_edgevec
+
+η(::Type{T}) where {T<:Real} = Params{T}().eta
 
 # -------------------------------------------------------------
 # Minkowski inner product  (-,+,+,+)
 # -------------------------------------------------------------
-minkowski_norm(a, b) = a' * eta * b
-
-# Optional numerical chop
-# -----------------------------------------------------------
-# Real number chop
-chop(x::Real; tol=1e-12) = abs(x) < tol ? 0.0 : x
-
-# Complex number chop
-function chop(z::Complex; tol=1e-12)
-    re = abs(real(z)) < tol ? 0.0 : real(z)
-    im = abs(imag(z)) < tol ? 0.0 : imag(z)
-    return complex(re, im)
-end
-
-# Recursive chop for arrays
-chop(A::AbstractArray; tol=1e-12) = map(x -> chop(x; tol=tol), A)
+minkowski_norm(a::AbstractVector{T}, b::AbstractVector{T}) where {T<:Real} =
+    (a' * η(T) * b)[1]
 
 # -----------------------------------------------------------
 #  list of edge vectors for each tetrahedron in the 4-simplex
 # -----------------------------------------------------------
-function compute_edgevec(bdypoints::Vector{<:AbstractVector})
+function compute_edgevec(bdypoints::Vector{<:AbstractVector{T}}) where {T<:Real}
     ntet = length(edge_or)   # for a 4-simplex this should be 5
-    edgevec = Vector{Vector{Vector{Float64}}}(undef, ntet)
+    edgevec = Vector{Vector{Vector{T}}}(undef, ntet)
 
     for j in 1:ntet
-        edges_j = Vector{Vector{Float64}}()
+        edges_j = Vector{Vector{T}}()
         for pair in edge_or[j]
             v1 = bdypoints[pair[1]]
             v2 = bdypoints[pair[2]]
-            push!(edges_j, chop(v1 .- v2))
+            push!(edges_j, v1 .- v2)
         end
         edgevec[j] = edges_j
     end
@@ -51,24 +40,25 @@ end
 # Compute normal vector to a tetrahedron given its 3 edge vectors
 # edgetet = [e1, e2, e3]   each ei is a 4-vector
 # -------------------------------------------------------------
-function tet_normal(edgetet::Vector{Vector{Float64}})
+function tet_normal(edgetet::Vector{Vector{T}}) where {T<:Real}
 
-    # Step 1 — Build M
-    M = zeros(Float64, 3, 4)
-    for i in 1:3
-        e = edgetet[i]
-        # (eᵗ η) is the row
-        M[i, :] = (e' * eta)
+    # Build covariant edge rows: η * e
+    E = hcat((η(T) * e for e in edgetet[1:3])...)
+
+    # Compute normal via Levi-Civita (exact)
+    n = Vector{T}(undef, 4)
+
+    for μ in 1:4
+        inds = setdiff(1:4, μ)
+        n[μ] = (isodd(μ + 1) ? one(T) : -one(T)) * det(E[inds, :])
     end
 
-    # Step 2 — Nullspace (exact linear-algebra solution)
-    N = nullspace(M)   # size (4,1) for 1D nullspace
+    # Minkowski norm
+    normsq = (n' * η(T) * n)[1]
+    # abs(normsq) > get_tolerance() || error("Degenerate tetrahedron")
 
-    n_raw = vec(N[:, 1])   # extract as a 4-vector
-
-    # Step 3 — Normalize using Minkowski metric
-    normsq = minkowski_norm(n_raw, n_raw)
-    n = n_raw / sqrt(abs(normsq))
+    # Normalize (keep sign!)
+    n ./= sqrt(abs(normsq))
 
     return n
 end
@@ -83,26 +73,27 @@ end
 #   α = barycentric coordinates
 #   b = [point; 1]
 # -------------------------------------------------------------
-function is_inside_simplex(point::AbstractVector{<:Real},
-                           bdypoints::Vector{<:AbstractVector})
+function is_inside_simplex(point::AbstractVector{T},
+                           bdypoints::Vector{<:AbstractVector{T}}) where {T<:Real}
     # Build coefficient matrix A
     # A is 5×5:
     # [P1 P2 P3 P4 P5
     #   1  1  1  1  1]
-    A = vcat(hcat(bdypoints...), ones(1, length(bdypoints)))
-
+    nv = length(bdypoints) 
+    A = vcat(hcat(bdypoints...), fill(one(T), 1, nv))
+    
     # Right-hand side b = [point; 1]
-    b = vcat(point, 1.0)
+    b = vcat(point, one(T))
 
     # Solve for barycentric coordinates α
     α = A \ b
 
-    # Inside iff all α_i >= 0 (small negative tolerance allowed)
-    return all(α .>= -1e-12)
+    tol = T(get_tolerance())
+    return all(α .>= -tol)
 end
 
 
-function get4dnormal(bdypoints)
+function get4dnormal(bdypoints::Vector{<:AbstractVector{T}}) where {T<:Real}
 
     edgetet_all = compute_edgevec(bdypoints)
     # Step 1: unsigned normals
@@ -110,13 +101,13 @@ function get4dnormal(bdypoints)
 
     # Step 2: tetrahedron barycenters
     tets = collect(combinations(bdypoints, 4))
-    centers = [sum(tet) / 4 for tet in tets]
+    centers = [sum(tet) / T(4) for tet in tets]
 
     # Step 3: shifted test points
-    eps = 1e-4
-    pert_plus  = [centers[i] .+ eps * normals_unsigned[i] for i in 1:5]
+    eps = sqrt(T(get_tolerance()))
+    pert_plus = [centers[i] .+ eps * normals_unsigned[i] for i in 1:5]
 
-    normals = Vector{Vector{Float64}}(undef, 5)
+    normals = Vector{Vector{T}}(undef, 5)
 
     # Step 4: determine sign by barycentric test
     for i in 1:5
@@ -128,9 +119,6 @@ function get4dnormal(bdypoints)
             normals[i] = normals_unsigned[i]
         end
     end
-
-    # if you want to chop them too:
-    normals = [chop(n) for n in normals]
 
     return normals
 end

@@ -20,12 +20,12 @@ function build_tetfaces_all(Tets)
     TetFaces0 = [
         [ [collect(a) for a in combinations(Tets[i][j], 3)]
           for j in 1:length(Tets[i]) ]
-        for i in 1:length(Tets)
+        for i in eachindex(Tets)
     ]
 
     TetFaces = Vector{Vector{Vector{Vector{Int}}}}(undef, length(Tets))
 
-    for i in 1:length(Tets)
+    for i in eachindex(Tets)
         faces_i = Vector{Vector{Vector{Int}}}()
         for j in 1:length(Tets[i])
             faces = TetFaces0[i][j]
@@ -43,8 +43,8 @@ end
 # ------------------------------------------------------------
 function build_triangles_all(Tets)
     tris = Vector{Vector{Int}}()
-    for i in 1:length(Tets)
-        for j in 1:length(Tets[i])
+    for i in eachindex(Tets)
+        for j in eachindex(Tets[i])
             append!(tris, [collect(a) for a in combinations(Tets[i][j], 3)])
         end
     end
@@ -59,9 +59,9 @@ function build_face_positions_all(TetFaces, Triangles)
 
     for (n, tri) in enumerate(Triangles)
         pos = Vector{Vector{Int}}()
-        for i in 1:length(TetFaces)
-            for j in 1:length(TetFaces[i])
-                for k in 1:length(TetFaces[i][j])
+        for i in eachindex(TetFaces)
+            for j in eachindex(TetFaces[i])
+                for k in eachindex(TetFaces[i][j])
                     if TetFaces[i][j][k] == tri
                         push!(pos, [i,j,k])
                     end
@@ -84,7 +84,7 @@ function classify_faces_global(Tets, Triangles, FacePos)
     BulkFaces    = Vector{Vector{Int}}()
     BulkFacesPos = Vector{Vector{Vector{Int}}}()
 
-    for i in 1:length(Triangles)
+    for i in eachindex(Triangles)
         pos = FacePos[i]
         parents = [Tets[p[1]][p[2]] for p in pos]
         unique_parents = unique(parents)
@@ -137,7 +137,7 @@ end
 # ------------------------------------------------------------
 function find_positions_value(selectlinks, value)
     pos = Vector{Vector{Int}}()
-    for i in 1:length(selectlinks)
+    for i in eachindex(selectlinks)
         for j in 1:2
             for k in 1:2
                 if selectlinks[i][j][k] == value
@@ -237,7 +237,7 @@ end
 
 function orient_bulk_faces_all(OrderBulkFaces, kappa)
     out = Vector{Vector{Vector{Int}}}(undef, length(OrderBulkFaces))
-    for i in 1:length(OrderBulkFaces)
+    for i in eachindex(OrderBulkFaces)
         seq = OrderBulkFaces[i]
         signs = [kappa[p[1]][p[2]][p[3]] for p in seq]
         out[i] = signs[1] == -1 ? seq : reverse(seq)

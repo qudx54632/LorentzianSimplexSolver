@@ -1,23 +1,22 @@
 module ThreeDTetra
 
 using LinearAlgebra
-using ..TetraNormals: chop
-using ..SpinAlgebra: eta
+using ..PrecisionUtils: get_tolerance
+using ..SpinAlgebra: Params
 using ..LorentzGroup: bivec1tohalf
 
 export ε, get3dtet, get3dvec, threetofour, getbivec, getbivec2d
 
+η(::Type{T}) where {T<:Real} = Params{T}().eta
 # ----------------------------------------------------------
 # Levi-Civita tensor ε_{ijkl}
 # ----------------------------------------------------------
-const ε = let A = zeros(Int, 4,4,4,4)
+const ε = let A = zeros(Int, 4, 4, 4, 4)
     for i in 1:4, j in 1:4, k in 1:4, l in 1:4
-        idx = (i,j,k,l)
-        # If any indices repeat, epsilon = 0
+        idx = (i, j, k, l)
         if length(unique(idx)) < 4
-            A[i,j,k,l] = 0
+            A[i, j, k, l] = 0
         else
-            # Compute sign of permutation (1,2,3,4) -> (i,j,k,l)
             arr = collect(idx)
             inv = 0
             for a in 1:3, b in a+1:4
@@ -25,7 +24,7 @@ const ε = let A = zeros(Int, 4,4,4,4)
                     inv += 1
                 end
             end
-            A[i,j,k,l] = (inv % 2 == 0) ? 1 : -1
+            A[i, j, k, l] = (inv % 2 == 0) ? 1 : -1
         end
     end
     A
@@ -34,10 +33,12 @@ end
 # ----------------------------------------------------------
 # get3dvec: just the transformed 4 → 4 vectors, no dropping
 # ----------------------------------------------------------
-function get3dvec(tetedgevec, tetsol13)
+function get3dvec(tetedgevec::AbstractVector{<:AbstractVector{T}},
+                  tetsol13::AbstractMatrix{T}) where {T<:Real}
     invΛ = inv(tetsol13)
-    return chop([invΛ * v for v in tetedgevec])
+    return [invΛ * v for v in tetedgevec]
 end
+
 
 # ----------------------------------------------------------
 # get3dtet:
@@ -50,48 +51,28 @@ end
 #   spacelike tet  → zero_pos = 1
 #   timelike tet   → zero_pos = 4
 # ----------------------------------------------------------
-function get3dtet(tetedgevec, tetsol13)
+function get3dtet(tetedgevec::AbstractVector{<:AbstractVector{T}},
+                  tetsol13::AbstractMatrix{T}) where {T<:Real}
 
-    # ------------------------------------------------------------
-    # Step 1: transform edges (Λ⁻¹ v)
-    # ------------------------------------------------------------
     tet4d = get3dvec(tetedgevec, tetsol13)
+    ncomp = length(tet4d[1])  # expect 4
 
-    ncomp = length(tet4d[1])   # = 4 expected
-
-    # ------------------------------------------------------------
-    # Step 2: sum abs(v[j]) over all edges
-    # find which coordinate component is identically zero
-    # ------------------------------------------------------------
     sum_components = [
-        sum(abs(v[j]) for v in tet4d) 
+        sum(abs(v[j]) for v in tet4d)
         for j in 1:ncomp
     ]
 
-    # ------------------------------------------------------------
-    # Step 3: find zero component
-    # ------------------------------------------------------------
-    zero_positions = findall(x -> isapprox(x, 0.0, atol=1e-12),
-                             sum_components)
+    tol = T(get_tolerance())
+    zero_positions = findall(x -> isapprox(x, zero(T), atol=tol), sum_components)
 
     if length(zero_positions) != 1
-        error("Something is wrong — could not identify the unique 0-component. Check your data.")
+        error("Could not identify unique 0-component. Check your data.")
     end
 
     pos = zero_positions[1]
 
-    # ------------------------------------------------------------
-    # Step 4: remove that component → 3D edge vectors
-    # ------------------------------------------------------------
-    tet3d = [ v[ setdiff(1:ncomp, (pos,)) ] for v in tet4d ]
+    tet3d = [v[setdiff(1:ncomp, (pos,))] for v in tet4d]
 
-    # ------------------------------------------------------------
-    # Step 5: sign convention (your rule)
-    #
-    # pos == 4 → timelike → -1
-    # pos == 1 → spacelike → +1
-    # otherwise → no convention → error
-    # ------------------------------------------------------------
     sign =
         pos == 4 ? -1 :
         pos == 1 ?  1 :
@@ -107,11 +88,12 @@ end
 # If sgndet > 0 → prepend 0
 # If sgndet < 0 → append 0
 # ----------------------------------------------------------
-function threetofour(n, sgndet::Int)
+function threetofour(n::AbstractVector{T}, sgndet::Int) where {T<:Real}
+    z = zero(T)
     if sgndet > 0
-        return vcat([0], n)
+        return vcat(T[z], n)
     else
-        return vcat(n, [0])
+        return vcat(n, T[z])
     end
 end
 
@@ -123,20 +105,22 @@ end
 #
 # Output → B ⋅ η 
 # ----------------------------------------------------------
-function getbivec(n1, n2)
-    B = zeros(Float64, 4,4)
-    ηv1 = eta * n1
-    ηv2 = eta * n2
+function getbivec(n1::AbstractVector{T}, n2::AbstractVector{T}) where {T<:Real}
+    B = zeros(T, 4, 4)
+    ηv1 = η(T) * n1
+    ηv2 = η(T) * n2
+
+    half = one(T) / T(2)
 
     for i in 1:4, j in 1:4
-        s = 0
+        s = zero(T)
         for k in 1:4, l in 1:4
-            s += ε[i,j,k,l] * ηv1[k] * ηv2[l]
+            s += T(ε[i, j, k, l]) * ηv1[k] * ηv2[l]
         end
-        B[i,j] = 1/2 * s
+        B[i, j] = half * s
     end
 
-    return B * eta
+    return B * η(T)
 end
 
 # ----------------------------------------------------------
@@ -145,17 +129,13 @@ end
 #   2. normalize by sqrt(|½ Tr(B⋅B)|)
 #   3. convert to SL(2,C) via bivec1tohalf
 # ----------------------------------------------------------
-function getbivec2d(n1, n2)
-
-    # Step 1: 4D bivector
+function getbivec2d(n1::AbstractVector{T}, n2::AbstractVector{T}) where {T<:Real}
     B = getbivec(n1, n2)
 
-    # Step 2: normalize
-    val = 0.5 * real(tr(B * B))
+    val = real(LinearAlgebra.tr(B * B)) / T(2)
     Bnorm = B / sqrt(abs(val))
 
-    # Step 3: convert to spinor representation
-    return bivec1tohalf(Bnorm)
+    return bivec1tohalf(Bnorm)  # returns Matrix{Complex{T}}
 end
 
 end # module

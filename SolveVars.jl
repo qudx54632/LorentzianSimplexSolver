@@ -1,256 +1,256 @@
 module SolveVars
 
 using ..CriticalPoints: compute_bdy_critical_data
-using ..DefineSymbols: find_position_in_chain, collect_bdry_symbols, collect_varias_symbols
+using ..DefineSymbols: find_position_in_chain,
+                       collect_bdry_symbols,
+                       collect_varias_symbols
+using ..DefineAction: γsym
 using PythonCall
 
 sympy = pyimport("sympy")
 
-export run_solver
+export run_solver, SolveData
 
+# ============================================================
+# Container for solver output (Julia-only values)
+# ============================================================
+struct SolveData{T<:Real}
+    labels_vars :: Vector{Py}
+    values_vars :: Vector{T}
+    flags_vars  :: BitVector   # true => divide by γ
 
-function solve_g_var(g_sym::Py, g_num::Matrix{ComplexF64})
-    sol = Dict{Py,Py}()
-
-    re = sympy.re
-    im = sympy.im
-
-    # helper: assign value to the unique symbol in expr
-    function assign(expr, value)
-        sym = only(collect(expr.free_symbols))   # the symbol (Py)
-        sol[sym] = Py(value)                     # IMPORTANT FIX
-    end
-
-    # (0,0): 1 + g1 + i g2
-    assign(re(g_sym[0,0] - 1), real(g_num[1,1]) - 1)
-    assign(im(g_sym[0,0] - 1), imag(g_num[1,1]))
-
-    # (0,1): g3 + i g4
-    assign(re(g_sym[0,1]), real(g_num[1,2]))
-    assign(im(g_sym[0,1]), imag(g_num[1,2]))
-
-    # (1,0): g5 + i g6
-    assign(re(g_sym[1,0]), real(g_num[2,1]))
-    assign(im(g_sym[1,0]), imag(g_num[2,1]))
-
-    return sol
+    labels_bdry :: Vector{Py}
+    values_bdry :: Vector{T}
+    flags_bdry  :: BitVector
 end
 
-function solve_g_special(g_sym::Py, g_num::Matrix{ComplexF64})
-    sol = Dict{Py,Py}()
+# ============================================================
+# Helper: extract unique symbol from a SymPy expr
+# ============================================================
+@inline get_sym(expr::Py) = only(collect(expr.free_symbols))
 
-    re = sympy.re
-    im = sympy.im
-
-    # helper: assign value to the unique symbol in expr
-    function assign(expr, value)
-        sym = only(collect(expr.free_symbols))   # the symbol (Py)
-        sol[sym] = Py(value)                     # IMPORTANT FIX
-    end
-
-    # (0,0): 1 + g1 + i g2
-    assign(re(g_sym[0,0] - 1), real(g_num[1,1]) - 1)
-    assign(im(g_sym[0,0] - 1), imag(g_num[1,1]) - 1)
-
-    # (1,0): g3 + i g4
-    assign(re(g_sym[1,0]), real(g_num[2,1]))
-    assign(im(g_sym[1,0]), imag(g_num[2,1]))
-
-    # (1,1): g5 + i g6
-    assign(re(g_sym[1,1]), real(g_num[2,2]))
-    assign(im(g_sym[1,2]), imag(g_num[2,2]))
-
-    return sol
+# ============================================================
+# Helper: stable key for membership tests (avoid String(::Py) issues)
+# ============================================================
+@inline function symkey(x::Py)::String
+    # sympy.sstr gives a canonical string form
+    return pyconvert(String, sympy.sstr(x))
 end
 
-function solve_g_upper(g_sym::Py, g_num::Matrix{ComplexF64})
-    sol = Dict{Py,Py}()
+# ============================================================
+# Helper: distribute labels/values/flags into vars or bdry
+# ============================================================
+function distribute!(labels_vars::Vector{Py}, values_vars::Vector{T}, flags_vars::BitVector,
+                     labels_bdry::Vector{Py}, values_bdry::Vector{T}, flags_bdry::BitVector,
+                     seen_vars::Set{String}, seen_bdry::Set{String},
+                     L::Vector{Py}, V::Vector{T}, F::BitVector,
+                     bdry_keys::Set{String}, var_keys::Set{String}) where {T<:Real}
 
-    re = sympy.re
-    im = sympy.im
+    @assert length(L) == length(V) == length(F)
 
-    # helper: assign value to the unique symbol in expr
-    function assign(expr, value)
-        sym = only(collect(expr.free_symbols))   # the symbol (Py)
-        sol[sym] = Py(value)                     # IMPORTANT FIX
+    for k in eachindex(L)
+        key = symkey(L[k])
+
+        if key in bdry_keys
+            key in seen_bdry && continue
+            push!(seen_bdry, key)
+            push!(labels_bdry, L[k])
+            push!(values_bdry, V[k])
+            push!(flags_bdry,  F[k])
+
+        elseif key in var_keys
+            key in seen_vars && continue
+            push!(seen_vars, key)
+            push!(labels_vars, L[k])
+            push!(values_vars, V[k])
+            push!(flags_vars,  F[k])
+
+        else
+            @warn "Symbol not classified as bdry or vars; defaulting to vars" symbol=key
+            key in seen_vars && continue
+            push!(seen_vars, key)
+            push!(labels_vars, L[k])
+            push!(values_vars, V[k])
+            push!(flags_vars,  F[k])
+        end
     end
 
-    # (0,0): 1 + g1
-    assign(re(g_sym[0,0] - 1), real(g_num[1,1]) - 1)
-
-    # (1,0): g2 + i g3
-    assign(re(g_sym[1,0]), real(g_num[2,1]))
-    assign(im(g_sym[1,0]), imag(g_num[2,1]))
-
-    return sol
+    return nothing
 end
 
+# ============================================================
+# g variables
+# ============================================================
+function solve_g_var(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
+    re, im = sympy.re, sympy.im
+    labels = Py[]; values = T[]; flags = BitVector()
 
-function solve_z_var(z_sym::Py, z_num::Vector{ComplexF64})
-    sol = Dict{Py,Py}()
+    push!(labels, get_sym(re(g_sym[0,0] - 1))); push!(values, real(g_num[1,1]) - one(T)); push!(flags, false)
+    push!(labels, get_sym(im(g_sym[0,0] - 1))); push!(values, imag(g_num[1,1]));          push!(flags, false)
 
-    re = sympy.re
-    im = sympy.im
+    push!(labels, get_sym(re(g_sym[0,1])));     push!(values, real(g_num[1,2]));          push!(flags, false)
+    push!(labels, get_sym(im(g_sym[0,1])));     push!(values, imag(g_num[1,2]));          push!(flags, false)
 
-    # detect which entry is nontrivial
+    push!(labels, get_sym(re(g_sym[1,0])));     push!(values, real(g_num[2,1]));          push!(flags, false)
+    push!(labels, get_sym(im(g_sym[1,0])));     push!(values, imag(g_num[2,1]));          push!(flags, false)
+
+    return labels, values, flags
+end
+
+function solve_g_special(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
+    re, im = sympy.re, sympy.im
+    labels = Py[]; values = T[]; flags = BitVector()
+
+    push!(labels, get_sym(re(g_sym[0,0] - 1))); push!(values, real(g_num[1,1]) - one(T)); push!(flags, false)
+    push!(labels, get_sym(im(g_sym[0,0] - 1))); push!(values, imag(g_num[1,1]));          push!(flags, false)
+
+    push!(labels, get_sym(re(g_sym[1,0])));     push!(values, real(g_num[2,1]));          push!(flags, false)
+    push!(labels, get_sym(im(g_sym[1,0])));     push!(values, imag(g_num[2,1]));          push!(flags, false)
+
+    push!(labels, get_sym(re(g_sym[1,1])));     push!(values, real(g_num[2,2]));          push!(flags, false)
+    push!(labels, get_sym(im(g_sym[1,1])));     push!(values, imag(g_num[2,2]));          push!(flags, false)
+
+    return labels, values, flags
+end
+
+function solve_g_upper(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
+    re, im = sympy.re, sympy.im
+    labels = Py[]; values = T[]; flags = BitVector()
+
+    push!(labels, get_sym(re(g_sym[0,0] - 1))); push!(values, real(g_num[1,1]) - one(T)); push!(flags, false)
+
+    push!(labels, get_sym(re(g_sym[1,0])));     push!(values, real(g_num[2,1]));          push!(flags, false)
+    push!(labels, get_sym(im(g_sym[1,0])));     push!(values, imag(g_num[2,1]));          push!(flags, false)
+
+    return labels, values, flags
+end
+
+# ============================================================
+# z variables
+# ============================================================
+function solve_z_var(z_sym::Py, z_num::Vector{Complex{T}}) where {T<:Real}
+    re, im = sympy.re, sympy.im
+    labels = Py[]; values = T[]; flags = BitVector()
+
     if !isempty(z_sym[0].free_symbols)
-        expr = z_sym[0]     # IMPORTANT
-        zval = z_num[1] - 1
+        expr = z_sym[0]
+        zval = z_num[1] - one(T)
+        push!(labels, get_sym(re(expr))); push!(values, real(zval)); push!(flags, false)
+        push!(labels, get_sym(im(expr))); push!(values, imag(zval)); push!(flags, false)
+        return labels, values, flags
     elseif !isempty(z_sym[1].free_symbols)
-        expr = z_sym[1]      # IMPORTANT
-        zval = z_num[2] - 1
+        expr = z_sym[1]
+        zval = z_num[2] - one(T)
+        push!(labels, get_sym(re(expr))); push!(values, real(zval)); push!(flags, false)
+        push!(labels, get_sym(im(expr))); push!(values, imag(zval)); push!(flags, false)
+        return labels, values, flags
     else
-        error("solve_z_var: no symbolic entry found in z_sym")
+        return labels, values, flags
     end
-
-    # extract symbols from expr = za + i zb
-    za = only(collect(re(expr).free_symbols))
-    zb = only(collect(im(expr).free_symbols))
-
-    sol[za] = Py(real(zval))
-    sol[zb] = Py(imag(zval))
-
-    return sol
 end
 
-
-function solve_j_var(j_sym::Py, area::Real, tetareasign::Int; γ::Py)
-    sol = Dict{Py,Py}()
-
-    # skip inactive entries
-    j_sym === Py(0) && return sol
-
-    if tetareasign == 1
-        # spacelike: j = A / γ
-        sol[j_sym] = Py(area) / γ
-    else
-        # timelike or others: j = A
-        sol[j_sym] = Py(area)
-    end
-
-    return sol
+# ============================================================
+# j variables
+# ============================================================
+function solve_j_var(j_sym::Py, area::T, tetareasign::Int) where {T<:Real}
+    j_sym === Py(0) && return Py[], T[], falses(0)
+    labels = Py[j_sym]
+    values = T[area]
+    flags  = BitVector([tetareasign == 1])  # true => divide by γ
+    return labels, values, flags
 end
 
-function solve_xi_var(xi_sym::Py, xi_sol::Vector{Float64})
-    sol = Dict{Py,Py}()
-
-    isempty(xi_sol) && return sol
-    any(isnan, xi_sol) && return sol
+# ============================================================
+# xi variables
+# ============================================================
+function solve_xi_var(xi_sym::Py, xi_sol::Vector{T}) where {T<:Real}
+    isempty(xi_sol) && return Py[], T[], falses(0)
 
     vars = collect(sympy.Matrix(xi_sym).free_symbols)
-    n = length(vars)
+    isempty(vars) && return Py[], T[], falses(0)
 
-    if n == 0
-        return sol
+    labels = Py[]; values = T[]; flags = BitVector()
 
-    elseif n == 1
-        # only one angle (θ)
-        sol[vars[1]] = Py(xi_sol[1])
-        return sol
-
-    elseif n == 2
-        # two angles: *_a, *_b
+    if length(vars) == 1
+        push!(labels, vars[1]); push!(values, xi_sol[1]); push!(flags, false)
+    elseif length(vars) == 2
         for v in vars
-            name = string(v)
-
-            if endswith(name, "_a")
-                sol[v] = Py(xi_sol[1])
-            elseif endswith(name, "_b")
-                sol[v] = Py(xi_sol[2])
-            else
-                error("solve_xi_var: unknown xi symbol $name")
-            end
+            name = symkey(v)
+            push!(labels, v)
+            push!(values,
+                  endswith(name, "_a") ? xi_sol[1] :
+                  endswith(name, "_b") ? xi_sol[2] :
+                  error("Unknown xi variable $name"))
+            push!(flags, false)
         end
-        return sol
-
     else
-        error("solve_xi_var: unexpected number of xi symbols ($n)")
-    end
-end
-
-function split_solution(sol_all::Dict{Py,Py}, geom)
-    bdry_syms   = collect_bdry_symbols(geom)
-    varias_syms = collect_varias_symbols(geom)
-
-    sol_bdry = Dict{Py,Py}()
-    sol_vars = Dict{Py,Py}()
-
-    for (k, v) in sol_all
-        if k in bdry_syms
-            sol_bdry[k] = v
-        elseif k in varias_syms
-            sol_vars[k] = v
-        else
-            @warn "Symbol not classified as bdry or var" symbol=k
-        end
+        error("Unexpected number of xi symbols")
     end
 
-    return sol_vars, sol_bdry
+    return labels, values, flags
 end
 
+# ============================================================
+# Main driver
+# ============================================================
 function run_solver(geom)
+
     g_mat  = geom.varias[:g_mat]
     z_mat  = geom.varias[:z_mat]
     j_mat  = geom.varias[:j_mat]
     xi_mat = geom.varias[:xi_mat]
 
-    ns   = length(g_mat)
-    ntet = 5
+    ns, ntet = length(g_mat), 5
+    T = eltype(eltype(eltype(geom.simplex[1].areas)))
 
-    sol_all = Dict{Py,Py}()
+    labels_vars = Py[]; values_vars = T[]; flags_vars = BitVector()
+    labels_bdry = Py[]; values_bdry = T[]; flags_bdry = BitVector()
 
-    geom_data = compute_bdy_critical_data(geom)
-    gdataof   = geom_data.gdataof
-    zdataf    = geom_data.zdataf
-    areadataf = geom_data.areadataf
-    xisoln    = geom_data.xisoln
+    # classification sets (string keys)
+    bdry_keys = Set(symkey(s) for s in collect_bdry_symbols(geom))
+    var_keys  = Set(symkey(s) for s in collect_varias_symbols(geom))
+
+    seen_vars = Set{String}()
+    seen_bdry = Set{String}()
+
+    data = compute_bdy_critical_data(geom)
+    gdataof, zdataf = data.gdataof, data.zdataf
+    areadataf, xisoln = data.areadataf, data.xisoln
+
     gspecialpos = geom.varias[:gspecialPos]
+    GaugeFixUpperTriangle = ns > 1 ? geom.connectivity[1]["GaugeFixUpperTriangle"] :
+                                     Vector{Vector{Int}}()
 
-    if ns > 1
-        GaugeFixUpperTriangle = geom.connectivity[1]["GaugeFixUpperTriangle"]
-    else 
-        GaugeFixUpperTriangle = Vector{Vector{Int}}()
-    end 
-
-    kappa       = [geom.simplex[a].kappa for a in 1:ns]
+    kappa       = [geom.simplex[a].kappa       for a in 1:ns]
     tetareasign = [geom.simplex[a].tetareasign for a in 1:ns]
 
-    γsym = sympy.symbols("gamma", real=true)
+    for a in 1:ns, i in 1:ntet
+        pos_gspecial = find_position_in_chain([a,i], gspecialpos)
+        pos_gupper   = find_position_in_chain([a,i], GaugeFixUpperTriangle)
 
-    for a in 1:ns
-        for i in 1:ntet
-            # g variables
+        L,V,F = pos_gspecial !== nothing ? solve_g_special(g_mat[a][i], gdataof[a][i]) :
+                pos_gupper   !== nothing ? solve_g_upper(g_mat[a][i], gdataof[a][i]) :
+                                           solve_g_var(g_mat[a][i], gdataof[a][i])
 
-            pos_gspecial = find_position_in_chain([a,i], gspecialpos)
-            pos_gupper   = find_position_in_chain([a,i], GaugeFixUpperTriangle)
-            if pos_gspecial !== nothing 
-                merge!(sol_all, solve_g_special(g_mat[a][i], gdataof[a][i]))
-            elseif pos_gupper !== nothing
-                merge!(sol_all, solve_g_upper(g_mat[a][i], gdataof[a][i]))
-            else
-                merge!(sol_all, solve_g_var(g_mat[a][i], gdataof[a][i]))
+        distribute!(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry, seen_vars, seen_bdry, L, V, F, bdry_keys, var_keys)
+
+        for j in 1:ntet
+            i == j && continue
+
+            L,V,F = solve_xi_var(xi_mat[a][i][j], xisoln[a][i][j])
+            distribute!(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry, seen_vars, seen_bdry, L, V, F, bdry_keys, var_keys)
+
+            if kappa[a][i][j] == 1
+                L,V,F = solve_z_var(z_mat[a][i][j], zdataf[a][i][j])
+                distribute!(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry, seen_vars, seen_bdry, L, V, F, bdry_keys, var_keys)
             end
-            
-            for j in 1:ntet
-                i == j && continue
 
-                # xi variables
-                merge!(sol_all, solve_xi_var(xi_mat[a][i][j], xisoln[a][i][j]))
-
-                # z variables
-                if kappa[a][i][j] == 1
-                    merge!(sol_all, solve_z_var(z_mat[a][i][j], zdataf[a][i][j]))
-                end
-
-                # j variables
-                merge!(sol_all, solve_j_var(j_mat[a][i][j], areadataf[a][i][j], tetareasign[a][i][j]; γ=γsym))
-            end
+            L,V,F = solve_j_var(j_mat[a][i][j], areadataf[a][i][j], tetareasign[a][i][j])
+            distribute!(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry, seen_vars, seen_bdry, L, V, F, bdry_keys, var_keys)
         end
     end
 
-    sol_vars, sol_bdry = split_solution(sol_all, geom)
-
-    return sol_vars, sol_bdry, γsym
+    return SolveData(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry), γsym
 end
 
-end
+end # module

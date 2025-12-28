@@ -2,9 +2,9 @@ module DefineSymbols
 
 using ..SpinAlgebra: σ3
 using ..CriticalPoints: compute_bdy_critical_data
+using ..PrecisionUtils: get_tolerance
 
 using PythonCall
-
 sympy = pyimport("sympy")
 
 const I        = sympy.I
@@ -30,26 +30,19 @@ end
 
 Return list [k,i] where gdataof[k][i][1,1] ≈ 0 and not in GaugeTet.
 """
-function compute_gspecialpos(gdataof, GaugeTet; tol=1e-12)
+function compute_gspecialpos(gdataof, GaugeTet)
+    tol = get_tolerance()
     ns   = length(gdataof)
     ntet = length(gdataof[1])
 
-    gauge_set = Set{Vector{Int}}()
-    for p in GaugeTet
-        push!(gauge_set, [p[1], p[2]])
-    end
-
+    gauge_set = Set(Tuple(p) for p in GaugeTet)
     gspecialpos = Vector{Vector{Int}}()
 
-    for k in 1:ns
-        for i in 1:ntet
-            key = [k, i]
-            if key ∈ gauge_set
-                continue
-            end
-            if abs(gdataof[k][i][1,1]) < tol
-                push!(gspecialpos, key)
-            end
+    for k in 1:ns, i in 1:ntet
+        key = (k, i)
+        key ∈ gauge_set && continue
+        if abs(gdataof[k][i][1,1]) < tol
+            push!(gspecialpos, [k, i])
         end
     end
 
@@ -149,21 +142,17 @@ function build_z_variables(num_vertex::Int,
     return var_z, z_mat
 end
 
-function compute_zspecialpos(zdataf, kappa; tol=1e-12)
+function compute_zspecialpos(zdataf, kappa)
+    tol = get_tolerance()
     ns   = length(zdataf)
     ntet = length(zdataf[1])
 
     out = Vector{Vector{Int}}()
 
-    for k in 1:ns
-        for i in 1:ntet
-            for j in 1:ntet
-                if kappa[k][i][j] == 1 && i != j
-                    z1 = zdataf[k][i][j][1]
-                    if !(abs(z1 - 1) < tol)
-                        push!(out, [k, i, j])
-                    end
-                end
+    for k in 1:ns, i in 1:ntet, j in 1:ntet
+        if kappa[k][i][j] == 1 && i != j
+            if abs(zdataf[k][i][j][1] - 1) > tol
+                push!(out, [k, i, j])
             end
         end
     end
@@ -327,7 +316,7 @@ end
 # returns (j_var, j_mat) where j_var is unique flat symbol list
 # ------------------------------------------------------------
 @inline function find_chain_index(key::Vector{Int}, chains)
-    for idx in 1:length(chains)
+    for idx in eachindex(chains)
         for v in chains[idx]
             if v[1] == key[1] && v[2] == key[2] && v[3] == key[3]
                 return idx
@@ -444,7 +433,7 @@ function run_define_variables(geom)
         end
     end
 
-    gspecialPos = compute_gspecialpos(gdataof, GaugeTet; tol=1e-12)
+    gspecialPos = compute_gspecialpos(gdataof, GaugeTet)
     zspecialPos = compute_zspecialpos(zdataf, kappa_all)
 
     xi_mat = build_xi_variables(ns, sgndet, tetareasign, tetn0sign, sharedTetsPos)
@@ -478,32 +467,25 @@ function run_define_variables(geom)
     return nothing
 end
 
+# ------------------------------------------------------------
+# symbol collectors
+# ------------------------------------------------------------
 function collect_bdry_symbols(geom)
     bdry_syms = Set{Py}()
-
     for key in (:xi_bdry, :g_bdry, :j_bdry)
-        if haskey(geom.varias, key)
-            for v in geom.varias[key]
-                push!(bdry_syms, v)
-            end
-        end
+        haskey(geom.varias, key) || continue
+        union!(bdry_syms, geom.varias[key])
     end
-
     return bdry_syms
 end
 
 function collect_varias_symbols(geom)
-    varias_syms = Set{Py}()
-
+    all_syms = Set{Py}()
     for key in (:xi_var, :g_var, :z_var, :j_var)
-        if haskey(geom.varias, key)
-            for v in geom.varias[key]
-                push!(varias_syms, v)
-            end
-        end
+        haskey(geom.varias, key) || continue
+        union!(all_syms, geom.varias[key])
     end
-
-    return varias_syms
+    return all_syms
 end
 
 end # module

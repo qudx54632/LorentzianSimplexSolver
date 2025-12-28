@@ -1,34 +1,39 @@
 module Dihedral
 
 using LinearAlgebra
-using ..SpinAlgebra: eta   # reuse Minkowski metric
+using ..PrecisionUtils: get_tolerance
+using ..SpinAlgebra: Params
 
 export theta_ab
 
+η(::Type{T}) where {T<:Real} = Params{T}().eta
 
 # Minkowski inner product
-minkowski_dot(a, b) = a' * eta * b
+minkowski_dot(a::AbstractVector{T}, b::AbstractVector{T}) where {T<:Real} =
+    (a' * η(T) * b)[1]
 
 # Minkowski squared norm
-minkowski_norm2(a) = minkowski_dot(a, a)
+minkowski_norm2(a::AbstractVector{T}) where {T<:Real} =
+    minkowski_dot(a, a)
 
 # -------------------------------------------------------------
 # Lorentzian / Euclidean dihedral angle between normals Na, Nb
 # -------------------------------------------------------------
-function theta_ab(Na::AbstractVector, Nb::AbstractVector)
-
+function theta_ab(Na::AbstractVector{T},
+                  Nb::AbstractVector{T}) where {T<:Real}
+    tol = T(get_tolerance())
     # squared norms
     Na2 = minkowski_norm2(Na)
     Nb2 = minkowski_norm2(Nb)
-
-    # Minkowski product
     Nab = minkowski_dot(Na, Nb)
 
+    oneT = one(T)
+    infT = T(Inf)
     # ---------------------------------------------------------
     # CASE 1: Mixed signature  (spacelike × timelike)
     # ---------------------------------------------------------
     # Na2 * Nb2 < 0
-    if Na2 * Nb2 < 0
+    if Na2 * Nb2 < -tol
         # -ArcSinh[Na . η . Nb]
         return -asinh(Nab)
     end
@@ -36,24 +41,24 @@ function theta_ab(Na::AbstractVector, Nb::AbstractVector)
     # ---------------------------------------------------------
     # CASE 2: Both timelike  (Na2 < 0 && Nb2 < 0)
     # ---------------------------------------------------------
-    if Na2 < 0 && Nb2 < 0
-        if Nab < 0
-            x = clamp(-Nab, 1.0, Inf)
+    if Na2 < -tol && Nb2 < -tol
+        if Nab < -tol
+            x = clamp(-Nab, oneT, infT)
             # -ArcCosh[-Na η Nb]
             return -acosh(x)
         else
-            Nab = clamp(Nab, 1.0, Inf)
+            x = clamp(Nab, oneT, infT)
             # ArcCosh[Na η Nb]
-            return acosh(Nab)
+            return acosh(x)
         end
     end
 
     # ---------------------------------------------------------
     # CASE 3: Euclidean-like (both spacelike) → ArcCos(Na ⋅ Nb)
     # ---------------------------------------------------------
-    if Na2 > 0 && Nb2 > 0
-        Nab = clamp(dot(Na, Nb), -1.0, 1.0)
-        return acos(Nab)
+    if Na2 > tol && Nb2 > tol
+        x = clamp(dot(Na, Nb), -oneT, oneT)
+        return acos(x)
     end
 
     # ---------------------------------------------------------

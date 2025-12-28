@@ -1,8 +1,16 @@
 module CriticalPoints
 
 using LinearAlgebra
+using ..PrecisionUtils: get_tolerance
+using ..SpinAlgebra: imag_unit
 
 export compute_bdy_critical_data
+
+# ------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------
+_realT(::Type{Complex{T}}) where {T<:Real} = T
+_realT(::Type{T}) where {T<:Real} = T
 
 # ------------------------------------------------------------
 # 1. ξ critical parameters (xisoln)
@@ -11,15 +19,17 @@ function compute_xisoln(bdyxi, sgndet, tetareasign, tetn0)
     ns   = length(bdyxi)
     ntet = length(bdyxi[1])
 
+    CT = eltype(bdyxi[1][1][1][1])     # Complex{T}
+    T  = _realT(CT)
     # xisol[k][i][j] = Vector{Float64} of length 2
-    xisol = Vector{Vector{Vector{Vector{Float64}}}}(undef, ns)
+    xisol = Vector{Vector{Vector{Vector{T}}}}(undef, ns)
 
     for k in 1:ns
-        xisol[k] = Vector{Vector{Vector{Float64}}}(undef, ntet)
+        xisol[k] = Vector{Vector{Vector{T}}}(undef, ntet)
 
         for i in 1:ntet
             nf = length(bdyxi[k][i])
-            xisol[k][i] = Vector{Vector{Float64}}(undef, nf)
+            xisol[k][i] = Vector{Vector{T}}(undef, nf)
 
             for j in 1:nf
                 ξ1 = bdyxi[k][i][j][1]  # spinor 1 (2-complex)
@@ -63,18 +73,27 @@ function compute_gdataof(sl2c_all)
     ns   = length(sl2c_all)
     ntet = length(sl2c_all[1])
 
-    return [
-        [ Matrix(inv(transpose(sl2c_all[k][i]))) for i in 1:ntet ]
-        for k in 1:ns
-    ]
+    CT = eltype(sl2c_all[1][1]) # Complex{T}
+    out = Vector{Vector{Matrix{CT}}}(undef, ns)
+
+    for k in 1:ns
+        out[k] = Vector{Matrix{CT}}(undef, ntet)
+        for i in 1:ntet
+            out[k][i] = inv(transpose(sl2c_all[k][i]))
+        end
+    end
+
+    return out
 end
 
 # ------------------------------------------------------------
 # 3. getz helper
 # ------------------------------------------------------------
-function getz(ginvT::Matrix{ComplexF64}, ξ::Vector{ComplexF64})
+function getz(ginvT::AbstractMatrix{Complex{T}}, ξ::AbstractVector{Complex{T}}) where {T<:Real}
     v = ginvT * ξ
-    if abs(real(v[1])) < 1e-12 && abs(imag(v[1])) < 1e-12
+    tol = T(get_tolerance())
+
+    if abs(real(v[1])) < tol && abs(imag(v[1])) < tol
         return v ./ v[2]
     else
         return v ./ v[1]
@@ -88,25 +107,25 @@ function compute_zdataf(kappa, tetareasign, gdataof, bdyxi)
     ns   = length(bdyxi)
     ntet = length(bdyxi[1])
 
-    zdata = Vector{Vector{Vector{Vector{ComplexF64}}}}(undef, ns)
+    CT = eltype(bdyxi[1][1][1][1])
+    T  = _realT(CT)
+    zeroz = Complex{T}[zero(T), zero(T)]
+
+    zdata = Vector{Vector{Vector{Vector{Complex{T}}}}}(undef, ns)
 
     for k in 1:ns
-        zdata[k] = Vector{Vector{Vector{ComplexF64}}}(undef, ntet)
+        zdata[k] = Vector{Vector{Vector{Complex{T}}}}(undef, ntet)
 
         for i in 1:ntet
-            zdata[k][i] = Vector{Vector{ComplexF64}}(undef, ntet)
+            zdata[k][i] = Vector{Vector{Complex{T}}}(undef, ntet)
 
             for j in 1:ntet
                 if kappa[k][i][j] == 1 && i != j
-                    if tetareasign[k][i][j] > 0
-                        ξ = bdyxi[k][i][j][1]
-                    else
-                        ξ = bdyxi[k][i][j][2]
-                    end
+                    ξ = (tetareasign[k][i][j] > 0) ? bdyxi[k][i][j][1] : bdyxi[k][i][j][2]
                     ginvT = Matrix(inv(transpose(gdataof[k][i])))
                     zdata[k][i][j] = getz(ginvT, ξ)
                 else
-                    zdata[k][i][j] = ComplexF64[0, 0]
+                    zdata[k][i][j] = copy(zeroz)
                 end
             end
         end
