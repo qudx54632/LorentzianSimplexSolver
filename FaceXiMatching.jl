@@ -2,15 +2,16 @@ module FaceXiMatching
 
 using LinearAlgebra
 using GenericLinearAlgebra
+using GenericSchur
 
 using ..PrecisionUtils: get_tolerance
 using ..ThreeDTetra: threetofour
-using ..SpinAlgebra: Params, sigmabar4, σ3, imag_unit
+using ..SpinAlgebra: Params, sigmabar4, σ3, imag_unit, Jvec, jjvec
 using ..XiFromSU: get_xi_from_su
 using ..Su2Su11FromBivector: su_from_bivectors
-using ..LorentzGroup: bivec1tohalf
 
 export run_face_xi_matching
+
 
 # ============================================================
 # 1. Compute Tetchange
@@ -245,44 +246,13 @@ end
 # ============================================================
 # 12. SL(2,C) constraints
 # ============================================================
-function so13_antisym_part(Λ::AbstractMatrix{T}) where {T<:Real}
-    η = Params{T}().eta
-    return (Λ - η * transpose(Λ) * η) / T(2)
-end
-
 function log_so13(Λ::AbstractMatrix{T}) where {T<:Real}
     @assert size(Λ) == (4,4)
 
-    tol = T(get_tolerance())
-    η = Params{T}().eta
-
-    # antisymmetric direction
-    Ωdir = so13_antisym_part(Λ)
-
-    # invariant
-    trΛ = tr(Λ)
-
-    # decide boost vs rotation
-    if Λ[1,1] > one(T) + tol
-        # -------- boost --------
-        θ = acosh(Λ[1,1])
-
-        normΩ = sqrt(abs(tr(Ωdir * Ωdir)) / T(2))
-        normΩ > tol || error("log_so13: degenerate boost")
-
-        return (θ / normΩ) * Ωdir
-
-    else
-        # -------- rotation --------
-        c = (trΛ - T(2)) / T(2)
-        c = clamp(c, -one(T), one(T))
-        θ = acos(c)
-
-        normΩ = sqrt(abs(tr(Ωdir * Ωdir)) / T(2))
-        normΩ > tol || error("log_so13: degenerate rotation")
-
-        return (θ / normΩ) * Ωdir
-    end
+    V = eigvecs(Λ)
+    λ = eigvals(Λ)
+    log_vals = V * Diagonal(log.(λ)) * inv(V)
+    return log_vals
 end
 
 """
@@ -312,15 +282,45 @@ function exp_sl2(X::AbstractMatrix{Complex{T}}) where {T<:Real}
     end
 end
 
-function sl2c_from_so13(Λ::AbstractMatrix{T}) where {T<:Real}
+function bivec1tohalf(bivec::AbstractMatrix{T}) where {T<:Number}
+
+    # real scalar type used by SpinAlgebra
+    RT = T <: Real ? T : real(T)
+
+    # infer output complex scalar type
+    CT = typeof(tr(bivec * Jvec(RT)[1]))
+
+    coeffs = Vector{CT}(undef, 6)
+
+    for i in 1:3
+        coeffs[i] = tr(bivec * Jvec(RT)[i])
+    end
+    for i in 4:6
+        coeffs[i] = -tr(bivec * Jvec(RT)[i])
+    end
+
+    coeffs .*= inv(RT(2))
+
+    M = zeros(CT, 2, 2)
+    for i in 1:6
+        M .+= coeffs[i] .* jjvec(RT)[i]
+    end
+
+    return M
+end
+
+function sl2c_from_so13(Λ::AbstractMatrix{T}, sgndet::Int) where {T<:Real}
 
     size(Λ) == (4,4) || error("sl2c_from_so13: Λ must be 4×4")
 
     # -------------------------------------------------
     # 1. Logarithm in so(1,3)
     # -------------------------------------------------
-    Ω = log_so13(Λ)   # Matrix{T}, antisymmetric in Minkowski sense
-
+    if T == BigFloat
+        Ω = log_so13(Λ)   # Matrix{T}, antisymmetric in Minkowski sense
+    else
+        Ω = log(Λ)
+    end
     # -------------------------------------------------
     # 2. Convert so(1,3) bivector → sl(2,C)
     #    You already use this map everywhere else
@@ -330,8 +330,11 @@ function sl2c_from_so13(Λ::AbstractMatrix{T}) where {T<:Real}
     # -------------------------------------------------
     # 3. Exponentiate
     # -------------------------------------------------
-    g = exp_sl2(X)
-
+    if T == BigFloat
+        g = T(sgndet) * exp_sl2(T(sgndet) * X)
+    else 
+        g = T(sgndet) * exp(T(sgndet) * X)
+    end
     # -------------------------------------------------
     # 4. Normalize determinant (numerical safety)
     # -------------------------------------------------
@@ -355,7 +358,7 @@ function build_SL2C_all(sl2ctest, solso13_new, sgndet, Tetchange)
         for j in 1:ntets
             if [i,j] in Tset
                 # println([i,j])
-                out[i][j] = sl2c_from_so13(solso13_new[i][j])
+                out[i][j] = sl2c_from_so13(solso13_new[i][j], sgndet[i][j])
             else
                 out[i][j] = sl2ctest[i][j]
             end

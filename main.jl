@@ -52,8 +52,8 @@ using .EOMsHessian: compute_EOMs, compute_Hessian, check_EOMs, evaluate_hessian
 # 1. Precision choice
 # ============================================================
 
-const ScalarT = Float64 # or BigFloat
-
+const ScalarT = Float64 
+#const ScalarT = BigFloat  # or BigFloat
 if ScalarT === BigFloat
     set_big_precision!(256)
     set_tolerance!(1e-20)
