@@ -1,7 +1,6 @@
 module EOMsHessian
 
 using PythonCall
-sympy = pyimport("sympy")
 using ..SolveVars: SolveData
 using ..PrecisionUtils: get_tolerance
 using ..SymbolicToJulia: build_argument_vector
@@ -9,6 +8,16 @@ using ..SymbolicToJulia: build_argument_vector
 
 export compute_EOMs, compute_Hessian, check_EOMs, evaluate_hessian
 
+const _sympy_ref = Ref{Union{Py,Nothing}}(nothing)
+
+@inline function _sympy()
+    s = _sympy_ref[]
+    if s === nothing
+        s = pyimport("sympy")
+        _sympy_ref[] = s
+    end
+    return s
+end
 # ============================================================
 # Equations of motion
 #
@@ -20,11 +29,11 @@ export compute_EOMs, compute_Hessian, check_EOMs, evaluate_hessian
 #   Dict{Py,Py}   v ↦ ∂S/∂v
 # ============================================================
 function compute_EOMs(S::Py, sd::SolveData)
-
+    sp = _sympy()
     dS = Dict{Py,Py}()
 
     for v in sd.labels_vars
-        dS[v] = sympy.diff(S, v)
+        dS[v] = sp.diff(S, v)
     end
 
     return dS
@@ -42,14 +51,14 @@ end
 #   Dict{Tuple{Py,Py},Py}   (v,w) ↦ ∂²S/∂v∂w
 # ============================================================
 function compute_Hessian(S::Py, sd::SolveData)
-
+    sp = _sympy()
     vars = sd.labels_vars
     H = Dict{Tuple{Py,Py},Py}()
 
     for v1 in vars
-        dS_v1 = sympy.diff(S, v1)
+        dS_v1 = sp.diff(S, v1)
         for v2 in vars
-            H[(v1, v2)] = sympy.diff(dS_v1, v2)
+            H[(v1, v2)] = sp.diff(dS_v1, v2)
         end
     end
 
@@ -60,7 +69,7 @@ end
 # Evaluate all gradient functions at γ = 1 and check EOMs
 # ------------------------------------------------------------
 function check_EOMs(grad_fns::Dict{Py,Function}, sd::SolveData; γ = 1)
-
+    sp = _sympy()
     tol = get_tolerance()
     all_zero = true
     args = build_argument_vector(sd, vcat(sd.labels_vars, sd.labels_bdry), γ)
@@ -87,7 +96,7 @@ function check_EOMs(grad_fns::Dict{Py,Function}, sd::SolveData; γ = 1)
         # Threshold test
         # ----------------------------------------------------
         if re_val > tol || im_val > tol
-            println("✘ dS/d$(sympy.sstr(v)) ≠ 0")
+            println("✘ dS/d$(sp.sstr(v)) ≠ 0")
             println("    |Re| = $re_val, |Im| = $im_val")
             all_zero = false
         end
@@ -102,19 +111,17 @@ function check_EOMs(grad_fns::Dict{Py,Function}, sd::SolveData; γ = 1)
     return nothing
 end
 
-using PythonCall
-sympy = pyimport("sympy")
 
 function evaluate_hessian(hess_fns::Dict{Tuple{Py,Py}, Function},
                           sd::SolveData{T};
                           γ = one(T)) where {T<:Real}
-
+    sp = _sympy()
     # Hessian is only over variables used in differentiation
     labels = sd.labels_vars
     n = length(labels)
 
     # symbol -> index (vars only)
-    index = Dict(pyconvert(String, sympy.sstr(v)) => i
+    index = Dict(pyconvert(String, sp.sstr(v)) => i
                  for (i, v) in enumerate(labels))
 
     # allocate
@@ -128,8 +135,8 @@ function evaluate_hessian(hess_fns::Dict{Tuple{Py,Py}, Function},
 
     # loop upper triangle only
     for ((v1, v2), h_fn) in hess_fns
-        i = index[pyconvert(String, sympy.sstr(v1))]
-        j = index[pyconvert(String, sympy.sstr(v2))]
+        i = index[pyconvert(String, sp.sstr(v1))]
+        j = index[pyconvert(String, sp.sstr(v2))]
         j < i && continue
 
         val = h_fn(args...)

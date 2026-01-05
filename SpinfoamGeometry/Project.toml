@@ -1,0 +1,19 @@
+name = "SpinfoamGeometry"
+uuid = "36bf1211-569d-468f-8774-4536b739575d"
+version = "0.1.0"
+
+[deps]
+Combinatorics = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
+GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
+Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
+GenericSchur = "c145ed77-6b09-5dd9-b285-bf645a82121e"
+
+[compat]
+Combinatorics = "1.1.0"
+GenericLinearAlgebra = "0.3.19"
+Symbolics = "6.58.0"
+PythonCall = "0.9.31"
+GenericSchur = "0.5.6"
+julia = "1.11.0"

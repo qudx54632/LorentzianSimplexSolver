@@ -1,18 +1,29 @@
 module DefineSymbols
 
-using ..SpinAlgebra: σ3
 using ..CriticalPoints: compute_bdy_critical_data
 using ..PrecisionUtils: get_tolerance
 
 using PythonCall
-sympy = pyimport("sympy")
+# sympy = pyimport("sympy")
 
-const I        = sympy.I
-const symbols  = sympy.symbols
-const Matrix   = sympy.Matrix
-const simplify = sympy.simplify
+# const I        = sympy.I
+# const symbols  = sympy.symbols
+# const Matrix   = sympy.Matrix
+# const simplify = sympy.simplify
 
 export run_define_variables, collect_bdry_symbols, collect_varias_symbols
+
+const _sympy_ref = Ref{Union{Py,Nothing}}(nothing)
+
+@inline function _sympy()
+    s = _sympy_ref[]
+    if s === nothing
+        s = pyimport("sympy")
+        _sympy_ref[] = s
+    end
+    return s
+end
+
 
 # ------------------------------------------------------------
 # g variables (flat var list + per-(simplex,tet) 2x2 matrix list)
@@ -50,6 +61,8 @@ function compute_gspecialpos(gdataof, GaugeTet)
 end
 
 function build_g_variables(num_vertex::Int, GaugeTet::Vector{Vector{Int}}, gspecialpos::Vector{Vector{Int}}, GaugeFixUpperTriangle::Vector{Vector{Int}})
+    sp = _sympy()
+    I  = sp.I
     g_var = Vector{Py}()                        # flat list of symbols
     g_bdry = Vector{Py}()     
     g_mat = Vector{Vector{Py}}(undef, num_vertex)  # g_mat[a][b] is 2x2 SymPy Matrix
@@ -64,23 +77,23 @@ function build_g_variables(num_vertex::Int, GaugeTet::Vector{Vector{Int}}, gspec
             pos_gupper   = find_position_in_chain([a,b], GaugeFixUpperTriangle)
 
             if pos_gauge === nothing && pos_gspecial === nothing && pos_gupper === nothing
-                g1 = collect(symbols("g_$(a)$(b)_1:7", real=true))
-                g_mat[a][b] = simplify(Matrix([1 + g1[1] + g1[2]*I      g1[3] + g1[4]*I;
+                g1 = collect(sp.symbols("g_$(a)$(b)_1:7", real=true))
+                g_mat[a][b] = sp.simplify(sp.Matrix([1 + g1[1] + g1[2]*I      g1[3] + g1[4]*I;
                         g1[5] + g1[6]*I          (1 + g1[3]*g1[5] + I*g1[4]*g1[5] + I*g1[3]*g1[6] - g1[4]*g1[6]) /(1 + g1[1] + g1[2]*I)]))
                 append!(g_var, g1)
             elseif pos_gauge !== nothing && pos_gspecial === nothing && pos_gupper === nothing
-                g1 = collect(symbols("g_$(a)$(b)_1:7", real=true))
-                g_mat[a][b] = simplify(Matrix([1 + g1[1] + g1[2]*I      g1[3] + g1[4]*I;
+                g1 = collect(sp.symbols("g_$(a)$(b)_1:7", real=true))
+                g_mat[a][b] = sp.simplify(sp.Matrix([1 + g1[1] + g1[2]*I      g1[3] + g1[4]*I;
                         g1[5] + g1[6]*I          (1 + g1[3]*g1[5] + I*g1[4]*g1[5] + I*g1[3]*g1[6] - g1[4]*g1[6]) /(1 + g1[1] + g1[2]*I)]))
                 append!(g_bdry, g1)
             elseif pos_gauge === nothing && pos_gspecial !== nothing && pos_gupper === nothing
-                g1 = collect(symbols("g_$(a)$(b)_1:7", real=true))
-                g_mat[a][b] = simplify(Matrix([1 + g1[1] + g1[2]*I      (-1 + g1[5] + g1[1]*g1[5] + I*g1[2]*g1[5] + I*g1[6] + I*g1[1]*g1[6] - g1[2]*g1[6]) /(g1[3] + g1[4]*I);
+                g1 = collect(sp.symbols("g_$(a)$(b)_1:7", real=true))
+                g_mat[a][b] = sp.simplify(sp.Matrix([1 + g1[1] + g1[2]*I      (-1 + g1[5] + g1[1]*g1[5] + I*g1[2]*g1[5] + I*g1[6] + I*g1[1]*g1[6] - g1[2]*g1[6]) /(g1[3] + g1[4]*I);
                         g1[3] + g1[4]*I          g1[5] + g1[6]*I]))
                 append!(g_var, g1)
             elseif pos_gauge === nothing && pos_gspecial === nothing && pos_gupper !== nothing
-                g1 = collect(symbols("g_$(a)$(b)_1:4", real=true))
-                g_mat[a][b] = simplify(Matrix([1 + g1[1]      0;
+                g1 = collect(sp.symbols("g_$(a)$(b)_1:4", real=true))
+                g_mat[a][b] = sp.simplify(sp.Matrix([1 + g1[1]      0;
                         g1[2] + g1[3]*I          1/(1 + g1[1])]))
                 append!(g_var, g1)
             else 
@@ -105,6 +118,9 @@ function build_z_variables(num_vertex::Int,
     ntet = 5
     special_set = Set((p[1], p[2], p[3]) for p in zspecialPos)
 
+    sp = _sympy()
+    I  = sp.I
+
     var_z = Vector{Py}()
     z_mat = Vector{Vector{Vector{Py}}}(undef, num_vertex)
 
@@ -116,14 +132,14 @@ function build_z_variables(num_vertex::Int,
 
             for j in 1:ntet
                 if i == j || kappa_all[a][i][j] != 1
-                    z_mat[a][i][j] = Matrix([0; 0])
+                    z_mat[a][i][j] = sp.Matrix([0; 0])
                     continue
                 end
 
                 ii, jj = i < j ? (i, j) : (j, i)
 
-                z  = symbols("z_$(a)$(ii)$(jj)",  real=true)
-                zc = symbols("zc_$(a)$(ii)$(jj)", real=true)
+                z  = sp.symbols("z_$(a)$(ii)$(jj)",  real=true)
+                zc = sp.symbols("zc_$(a)$(ii)$(jj)", real=true)
 
                 push!(var_z, z)
                 push!(var_z, zc)
@@ -131,9 +147,9 @@ function build_z_variables(num_vertex::Int,
                 zcplx = 1 + z + I*zc
 
                 if (a, i, j) in special_set
-                    z_mat[a][i][j] = simplify(Matrix([zcplx; 1]))
+                    z_mat[a][i][j] = sp.simplify(sp.Matrix([zcplx; 1]))
                 else
-                    z_mat[a][i][j] = simplify(Matrix([1; zcplx]))
+                    z_mat[a][i][j] = sp.simplify(sp.Matrix([1; zcplx]))
                 end
             end
         end
@@ -168,6 +184,8 @@ end
 function apply_shared_tets_to_xi!(xi_expr, sharedTetsPos)
     ntet = length(xi_expr[1][1])  # should be 5
 
+    sp = _sympy()
+
     for pair in sharedTetsPos
         # unpack ((s1,t1),(s2,t2))
         s1, t1 = pair[1]
@@ -189,7 +207,7 @@ function apply_shared_tets_to_xi!(xi_expr, sharedTetsPos)
         k = 1
         for j in 1:ntet
             if j == t2
-                row_dst[j] = Matrix([0; 0])
+                row_dst[j] = sp.Matrix([0; 0])
             else
                 row_dst[j] = row_wo_self[k]
                 k += 1
@@ -206,6 +224,8 @@ function build_xi_variables(num_vertex::Int,
                             sgndet::Vector{Vector{Int}},
                             tetareasign::Vector{Vector{Vector{Int}}},
                             tetn0sign::Vector{Vector{Vector{Int}}}, sharedTetsPos)
+    sp = _sympy()
+    I  = sp.I
 
     ntet = 5
     xi_mat = Vector{Vector{Vector{Py}}}(undef, num_vertex)
@@ -218,41 +238,41 @@ function build_xi_variables(num_vertex::Int,
 
             for j in 1:ntet
                 if i == j
-                    xi_mat[a][i][j] = Matrix([0; 0])
+                    xi_mat[a][i][j] = sp.Matrix([0; 0])
                     continue
                 end
 
                 if sgndet[a][i] == 1
-                    za = symbols("zeta_$(a)_$(i)_$(j)_a", real=true)
-                    zb = symbols("zeta_$(a)_$(i)_$(j)_b", real=true)
+                    za = sp.symbols("zeta_$(a)_$(i)_$(j)_a", real=true)
+                    zb = sp.symbols("zeta_$(a)_$(i)_$(j)_b", real=true)
 
-                    xi_mat[a][i][j] = simplify(Matrix([
-                        sympy.sin(za);
-                        sympy.cos(za) * sympy.exp(I * zb)
+                    xi_mat[a][i][j] = sp.simplify(sp.Matrix([
+                        sp.sin(za);
+                        sp.cos(za) * sp.exp(I * zb)
                     ]))
 
                 elseif tetareasign[a][i][j] == 1
-                    za = symbols("zeta_$(a)_$(i)_$(j)_a", real=true)
-                    zb = symbols("zeta_$(a)_$(i)_$(j)_b", real=true)
+                    za = sp.symbols("zeta_$(a)_$(i)_$(j)_a", real=true)
+                    zb = sp.symbols("zeta_$(a)_$(i)_$(j)_b", real=true)
 
                     if tetn0sign[a][i][j] == 1
-                        xi_mat[a][i][j] = simplify(Matrix([
-                            sympy.cosh(za);
-                            sympy.exp(-I * zb) * sympy.sinh(za)
+                        xi_mat[a][i][j] = sp.simplify(sp.Matrix([
+                            sp.cosh(za);
+                            sp.exp(-I * zb) * sp.sinh(za)
                         ]))
                     else
-                        xi_mat[a][i][j] = simplify(Matrix([
-                            sympy.sinh(za) * sympy.exp(I * zb);
-                            sympy.cosh(za)
+                        xi_mat[a][i][j] = sp.simplify(sp.Matrix([
+                            sp.sinh(za) * sp.exp(I * zb);
+                            sp.cosh(za)
                         ]))
                     end
 
                 else
-                    zb = symbols("zeta_$(a)_$(i)_$(j)_b", real=true)
+                    zb = sp.symbols("zeta_$(a)_$(i)_$(j)_b", real=true)
 
-                    xi_mat[a][i][j] = simplify(Matrix([
+                    xi_mat[a][i][j] = sp.simplify(sp.Matrix([
                         1;
-                        sympy.exp(I * zb)
+                        sp.exp(I * zb)
                     ]))
                 end
             end
@@ -266,7 +286,9 @@ function build_xi_variables(num_vertex::Int,
 end
 
 function extract_symbols(expr::Py)
-    collect(sympy.Matrix(expr).free_symbols)
+    sp = _sympy()
+
+    collect(sp.Matrix(expr).free_symbols)
 end
 
 function split_xi_variables(xi_mat, timelikeTetsPos, Gaugespacelike, Gaugetimelike)
@@ -331,6 +353,8 @@ function build_j_variables(num_vertex::Int,
                            OrderBDryFaces;
                            ntet=5)
 
+    sp = _sympy()
+
     j_mat = Vector{Vector{Vector{Py}}}(undef, num_vertex)
     j_var = Vector{Py}()  # flat list, unique later
     j_bdry = Vector{Py}() 
@@ -352,7 +376,7 @@ function build_j_variables(num_vertex::Int,
                 pos = find_chain_index(key, OrderBulkFaces)
                 if pos !== nothing
                     a, b, c = OrderBulkFaces[pos][1]
-                    jsym = symbols("j_$(a)_$(b)_$(c)", real=true)
+                    jsym = sp.symbols("j_$(a)_$(b)_$(c)", real=true)
                     j_mat[k][i][j] = jsym
                     push!(j_var, jsym)
                     continue
@@ -362,7 +386,7 @@ function build_j_variables(num_vertex::Int,
                 @assert pos !== nothing
 
                 a, b, c = OrderBDryFaces[pos][1]
-                jsym = symbols("j_$(a)_$(b)_$(c)", real=true)
+                jsym = sp.symbols("j_$(a)_$(b)_$(c)", real=true)
                 j_mat[k][i][j] = jsym
                 push!(j_bdry, jsym)
             end

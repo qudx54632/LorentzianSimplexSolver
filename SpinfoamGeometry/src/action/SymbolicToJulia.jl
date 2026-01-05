@@ -8,13 +8,37 @@ export build_action_function,
        build_hessian_functions,
        build_argument_vector
        
-sympy      = pyimport("sympy")
-juliaprint = pyimport("sympy.printing.julia")
+const _sympy_ref      = Ref{Union{Py,Nothing}}(nothing)
+const _juliaprint_ref = Ref{Union{Py,Nothing}}(nothing)
+
+@inline function _sympy()
+    s = _sympy_ref[]
+    if s === nothing
+        s = pyimport("sympy")
+        _sympy_ref[] = s
+    end
+    return s
+end
+
+@inline function _juliaprint()
+    p = _juliaprint_ref[]
+    if p === nothing
+        p = pyimport("sympy.printing.julia")
+        _juliaprint_ref[] = p
+    end
+    return p
+end
+
+# ------------------------------------------------------------
+# SymPy → Julia expression
+# ------------------------------------------------------------
 
 @inline function sympy_to_expr(expr::Py)
+    juliaprint = _juliaprint()
     code = pyconvert(String, juliaprint.julia_code(expr))
     return Meta.parse(code)
 end
+
 
 # ------------------------------------------------------------
 # Action S(x)
@@ -42,18 +66,20 @@ end
 
 function build_argument_vector(sd::SolveData{T}, labels::Vector{Py}, γ) where {T<:Real}
 
-    n = length(labels)
-    vals = Vector{Any}(undef, n + 1)   # Any allows symbol or number
+    sp = _sympy()
 
-    var_index  = Dict(pyconvert(String, sympy.sstr(k)) => i
+    n = length(labels)
+    vals = Vector{Any}(undef, n + 1)
+
+    var_index  = Dict(pyconvert(String, sp.sstr(k)) => i
                       for (i,k) in enumerate(sd.labels_vars))
-    bdry_index = Dict(pyconvert(String, sympy.sstr(k)) => i
+    bdry_index = Dict(pyconvert(String, sp.sstr(k)) => i
                       for (i,k) in enumerate(sd.labels_bdry))
 
     numeric = is_numeric_gamma(γ)
 
     for (i, lab) in enumerate(labels)
-        key = pyconvert(String, sympy.sstr(lab))
+        key = pyconvert(String, sp.sstr(lab))
 
         if haskey(var_index, key)
             j = var_index[key]
@@ -70,9 +96,7 @@ function build_argument_vector(sd::SolveData{T}, labels::Vector{Py}, γ) where {
         end
     end
 
-    # γ goes in untouched (symbol or number)
     vals[end] = γ
-
     return vals
 end
 

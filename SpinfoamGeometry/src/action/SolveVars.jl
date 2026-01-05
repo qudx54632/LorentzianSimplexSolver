@@ -5,11 +5,22 @@ using ..DefineSymbols: find_position_in_chain,
                        collect_bdry_symbols,
                        collect_varias_symbols
 using ..DefineAction: γsym
-using PythonCall
+using PythonCall: Py, pyimport, pystr, pyconvert
 
-sympy = pyimport("sympy")
+# sympy = pyimport("sympy")
 
 export run_solver, SolveData
+
+const _sympy_ref = Ref{Union{Py,Nothing}}(nothing)
+
+@inline function _sympy()
+    s = _sympy_ref[]
+    if s === nothing
+        s = pyimport("sympy")
+        _sympy_ref[] = s
+    end
+    return s
+end
 
 # ============================================================
 # Container for solver output (Julia-only values)
@@ -27,14 +38,17 @@ end
 # ============================================================
 # Helper: extract unique symbol from a SymPy expr
 # ============================================================
-@inline get_sym(expr::Py) = only(collect(expr.free_symbols))
+@inline function get_sym(expr::Py)
+    syms = collect(expr.free_symbols)
+    isempty(syms) && error("No free symbols")
+    return syms[1]   # ← SAFE
+end
 
 # ============================================================
 # Helper: stable key for membership tests (avoid String(::Py) issues)
 # ============================================================
 @inline function symkey(x::Py)::String
-    # sympy.sstr gives a canonical string form
-    return pyconvert(String, sympy.sstr(x))
+    return pyconvert(String, pystr(x))
 end
 
 # ============================================================
@@ -82,7 +96,8 @@ end
 # g variables
 # ============================================================
 function solve_g_var(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
-    re, im = sympy.re, sympy.im
+    sp = _sympy()
+    re, im = sp.re, sp.im
     labels = Py[]; values = T[]; flags = BitVector()
 
     push!(labels, get_sym(re(g_sym[0,0] - 1))); push!(values, real(g_num[1,1]) - one(T)); push!(flags, false)
@@ -98,7 +113,8 @@ function solve_g_var(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
 end
 
 function solve_g_special(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
-    re, im = sympy.re, sympy.im
+    sp = _sympy()
+    re, im = sp.re, sp.im
     labels = Py[]; values = T[]; flags = BitVector()
 
     push!(labels, get_sym(re(g_sym[0,0] - 1))); push!(values, real(g_num[1,1]) - one(T)); push!(flags, false)
@@ -114,7 +130,8 @@ function solve_g_special(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
 end
 
 function solve_g_upper(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
-    re, im = sympy.re, sympy.im
+    sp = _sympy()
+    re, im = sp.re, sp.im
     labels = Py[]; values = T[]; flags = BitVector()
 
     push!(labels, get_sym(re(g_sym[0,0] - 1))); push!(values, real(g_num[1,1]) - one(T)); push!(flags, false)
@@ -129,7 +146,8 @@ end
 # z variables
 # ============================================================
 function solve_z_var(z_sym::Py, z_num::Vector{Complex{T}}) where {T<:Real}
-    re, im = sympy.re, sympy.im
+    sp = _sympy()
+    re, im = sp.re, sp.im
     labels = Py[]; values = T[]; flags = BitVector()
 
     if !isempty(z_sym[0].free_symbols)
@@ -165,8 +183,9 @@ end
 # ============================================================
 function solve_xi_var(xi_sym::Py, xi_sol::Vector{T}) where {T<:Real}
     isempty(xi_sol) && return Py[], T[], falses(0)
-
-    vars = collect(sympy.Matrix(xi_sym).free_symbols)
+    sp = _sympy()
+    
+    vars = collect(sp.Matrix(xi_sym).free_symbols)
     isempty(vars) && return Py[], T[], falses(0)
 
     labels = Py[]; values = T[]; flags = BitVector()
