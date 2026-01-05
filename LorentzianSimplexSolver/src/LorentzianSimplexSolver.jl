@@ -1,11 +1,11 @@
-module SpinfoamGeometry
+module LorentzianSimplexSolver
 
 using Symbolics
 using LinearAlgebra
 using Combinatorics
 
 # ============================================================
-# SpinfoamGeometry
+# LorentzianSimplexSolver
 # ============================================================
 
 # ---------------- utilities ----------------

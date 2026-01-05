@@ -1,5 +1,0 @@
-channels = ["conda-forge"]
-
-[deps]
-python = "3.11.*"
-sympy = ""
