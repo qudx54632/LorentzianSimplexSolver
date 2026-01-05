@@ -1,6 +1,6 @@
-SpinfoamGeometry
+LorentzianSimplexSolver
 
-SpinfoamGeometry is a Julia package for constructing, analyzing, and matching boundary geometries of 4-simplices in covariant Loop Quantum Gravity (LQG) and spinfoam models.
+LorentzianSimplexSolver is a Julia package for constructing, analyzing, and matching boundary geometries of 4-simplices in covariant Loop Quantum Gravity (LQG) and spinfoam models.
 
 It provides a complete pipeline from discrete boundary data (vertex coordinates or simplices) to:
 	•	bivectors and normals
@@ -32,7 +32,7 @@ Pkg.activate(".")
 Pkg.instantiate()
 
 Then load the package:
-using SpinfoamGeometry
+using LorentzianSimplexSolver
 
 Note
 This package is currently intended for research use and is not yet registered in the General registry.
@@ -53,9 +53,9 @@ The interactive script will guide you through:
 	7.	Action evaluation, equations of motion, and Hessian computation
 
 Package structure
-SpinfoamGeometry/
+LorentzianSimplexSolver/
 ├── src/
-│   ├── SpinfoamGeometry.jl
+│   ├── LorentzianSimplexSolver.jl
 │   ├── utils/
 │   ├── algebra/
 │   ├── geometry/
