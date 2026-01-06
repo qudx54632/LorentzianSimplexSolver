@@ -12,7 +12,6 @@ using ..Su2Su11FromBivector: su_from_bivectors
 
 export run_face_xi_matching
 
-
 # ============================================================
 # 1. Compute Tetchange
 # ============================================================
@@ -283,27 +282,23 @@ function exp_sl2(X::AbstractMatrix{Complex{T}}) where {T<:Real}
 end
 
 function bivec1tohalf(bivec::AbstractMatrix{T}) where {T<:Number}
-
-    # real scalar type used by SpinAlgebra
     RT = T <: Real ? T : real(T)
-
-    # infer output complex scalar type
-    CT = typeof(tr(bivec * Jvec(RT)[1]))
+    CT = Complex{RT}
 
     coeffs = Vector{CT}(undef, 6)
 
     for i in 1:3
-        coeffs[i] = tr(bivec * Jvec(RT)[i])
+        coeffs[i] = CT(tr(bivec * Jvec(RT)[i]))
     end
     for i in 4:6
-        coeffs[i] = -tr(bivec * Jvec(RT)[i])
+        coeffs[i] = -CT(tr(bivec * Jvec(RT)[i]))
     end
 
     coeffs .*= inv(RT(2))
 
     M = zeros(CT, 2, 2)
     for i in 1:6
-        M .+= coeffs[i] .* jjvec(RT)[i]
+        M .+= coeffs[i] .* CT.(jjvec(RT)[i])
     end
 
     return M
