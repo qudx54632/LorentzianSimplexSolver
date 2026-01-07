@@ -126,7 +126,7 @@ for (s, simplex) in enumerate(simplices)
     push!(datasets, ds)
 end
 
-geom = LorentzianSimplexSolver.GeometryTypes.GeometryCollection(datasets)
+geom_base = LorentzianSimplexSolver.GeometryTypes.GeometryCollection(datasets)
 println("\n=== Geometry initialization complete ===\n")
 
 # ------------------------------------------------------------
@@ -134,7 +134,7 @@ println("\n=== Geometry initialization complete ===\n")
 # ------------------------------------------------------------
 println("Would you like to check parallel transport conditions and closure conditions for each simplex? (y or n)")
 if lowercase(strip(readline())) == "y"
-    for (idx, simplex) in enumerate(geom.simplex)
+    for (idx, simplex) in enumerate(geom_base.simplex)
         println("\n--- Checking simplex $idx ---")
         LorentzianSimplexSolver.GeometryConsistency.check_sl2c_parallel_transport(simplex.solgsl2c, simplex.bdybivec55)
         LorentzianSimplexSolver.GeometryConsistency.check_so13_parallel_transport(simplex.solgso13, simplex.bdybivec4d55)
@@ -151,59 +151,89 @@ if ns > 1
     println("\nConnect simplices and perform face matching? (y or n)")
     if lowercase(strip(readline())) == "y"
         println("\nFixing global κ-sign orientation ...")
-        LorentzianSimplexSolver.KappaOrientation.fix_kappa_signs!(simplices, geom)
+        LorentzianSimplexSolver.KappaOrientation.fix_kappa_signs!(simplices, geom_base)
 
         println("\nBuilding global connectivity ...")
-        conn = LorentzianSimplexSolver.FourSimplexConnectivity.build_global_connectivity(simplices, geom)
-        push!(geom.connectivity, conn)
-        println("Global connectivity constructed.")
+        conn = LorentzianSimplexSolver.FourSimplexConnectivity.build_global_connectivity(simplices, geom_base)
+        push!(geom_base.connectivity, conn)
 
-        println("\nRunning face-ξ matching ...")
-        LorentzianSimplexSolver.FaceXiMatching.run_face_xi_matching(geom)
+        geom_ref    = deepcopy(geom_base)
+        geom_parity = deepcopy(geom_base)
+        LorentzianSimplexSolver.FaceXiMatching.run_face_xi_matching(geom_ref; sector=:ref)
+        LorentzianSimplexSolver.FaceXiMatching.run_face_xi_matching(geom_parity; sector=:parity)
+        println("Global connectivity constructed for with all + and all - orientations.")
 
-        println("\nRunning final face-matching checks ...")
-        LorentzianSimplexSolver.FaceMatchingChecks.check_all(geom)
+        # println("\nRunning final face-matching checks ...")
+        LorentzianSimplexSolver.FaceMatchingChecks.check_all(geom_ref)
+        LorentzianSimplexSolver.FaceMatchingChecks.check_all(geom_parity)
 
         println("\nPerform SU(2) and SU(1,1) gauge fixing ...")
-        LorentzianSimplexSolver.GaugeFixingSU.run_su2_su11_gauge_fix(geom)
+        LorentzianSimplexSolver.GaugeFixingSU.run_su2_su11_gauge_fix(geom_ref)
+        LorentzianSimplexSolver.GaugeFixingSU.run_su2_su11_gauge_fix(geom_parity)
         println("\nGauge fixing finished.")
     else
         println("\nSkipping connectivity construction and face matching.")
     end
 else
+    geom_ref    = deepcopy(geom_base)
+    geom_parity = deepcopy(geom_base)
+    
+    sl2c_ref = [geom_base.simplex[i].solgsl2c    for i in 1:ns]
+    sgndet = [geom_base.simplex[i].sgndet    for i in 1:ns]
+    geom_parity.simplex[1].solgsl2c = LorentzianSimplexSolver.FaceXiMatching.update_sl2ctest(sl2c_ref, sgndet)[1]
     println("\nOnly one simplex detected. Global connectivity is skipped.")
 end
 
 # ------------------------------------------------------------
-# 7. Symbols, action, EOMs, Hessian
+# 7a. Symbols and action (reference orientation)
 # ------------------------------------------------------------
 println("\nDefining symbols and separating boundary symbols from dynamical variables...")
-LorentzianSimplexSolver.DefineSymbols.run_define_variables(geom)
+LorentzianSimplexSolver.DefineSymbols.run_define_variables(geom_ref)
+sd_ref, _ = LorentzianSimplexSolver.SolveVars.run_solver(geom_ref)
 
-println("\nComputing boundary data and critical points for all symbols...")
-sd, _ = LorentzianSimplexSolver.SolveVars.run_solver(geom)
-println("The action contains $(length(sd.labels_vars)) dynamical variables.")
+LorentzianSimplexSolver.DefineSymbols.run_define_variables(geom_parity)
+sd_parity, _ = LorentzianSimplexSolver.SolveVars.run_solver(geom_parity)
+
+println("The action contains $(length(sd_ref.labels_vars)) dynamical variables.")
 
 println("\nConstructing the action...")
-S = LorentzianSimplexSolver.DefineAction.compute_action(geom)
+S_ref = LorentzianSimplexSolver.DefineAction.compute_action(geom_ref)
+S_parity = LorentzianSimplexSolver.DefineAction.compute_action(geom_parity)
 
 println("\nCompiling action into a Julia function...")
-S_fn, labels = LorentzianSimplexSolver.SymbolicToJulia.build_action_function(S, sd)
+S_ref_fn, labels_ref = LorentzianSimplexSolver.SymbolicToJulia.build_action_function(S_ref, sd_ref)
+S_parity_fn, labels_parity =  LorentzianSimplexSolver.SymbolicToJulia.build_action_function(S_parity, sd_parity)
 
 println("\nEvaluating the action at the critical point...")
+using Symbolics
 @variables γ
-args = LorentzianSimplexSolver.SymbolicToJulia.build_argument_vector(sd, labels, γ)
-S_sym = simplify(S_fn(args...))
-println("The action at the critical point is $S_sym.")
+args_ref = LorentzianSimplexSolver.SymbolicToJulia.build_argument_vector(sd_ref, labels_ref, γ)
+S_ref_sym = expand(simplify(S_ref_fn(args_ref...)))
+
+args_parity = LorentzianSimplexSolver.SymbolicToJulia.build_argument_vector(sd_parity, labels_parity, γ)
+S_parity_sym = expand(simplify(S_parity_fn(args_parity...)))
+
+phase = expand(simplify((S_ref_sym+S_parity_sym)//2))
+S_regge = LorentzianSimplexSolver.ReggeAction.run_Regge_action(geom_base)
+println("The Regge action is $S_regge, and the overall phase is $phase")
+
+S_pos, S_neg =
+    imag(simplify(S_ref_sym - phase)) >= S_regge ?
+        (S_ref_sym, S_parity_sym) :
+        (S_parity_sym, S_ref_sym)
+label_pos = "S^(" * repeat("+", ns) * ")"
+label_neg = "S^(" * repeat("-", ns) * ")"
+println("The action at the critical point is $label_pos = $S_pos")
+println("The action at the critical point is $label_neg = $S_neg")
 
 println("\nWould you like to check the equations of motion? (y/n)")
 if lowercase(strip(readline())) == "y"
     println("\nComputing equations of motion (symbolic)...")
-    dS = LorentzianSimplexSolver.EOMsHessian.compute_EOMs(S, sd)
+    dS_ref = LorentzianSimplexSolver.EOMsHessian.compute_EOMs(S_ref, sd_ref)
 
     println("\nChecking equations of motion...")
-    grad_fns = LorentzianSimplexSolver.SymbolicToJulia.build_gradient_functions(dS, sd)
-    LorentzianSimplexSolver.EOMsHessian.check_EOMs(grad_fns, sd; γ = one(ScalarT))
+    grad_ref_fns = LorentzianSimplexSolver.SymbolicToJulia.build_gradient_functions(dS_ref, sd_ref)
+    LorentzianSimplexSolver.EOMsHessian.check_EOMs(grad_ref_fns, sd_ref; γ = one(ScalarT))
 else
     println("\nSkipping equations-of-motion and Hessian computing.")
 end
@@ -211,14 +241,14 @@ end
 println("\nWould you like to compute Hessian? (y/n)")
 if lowercase(strip(readline())) == "y"
     println("\nComputing Hessian matrix (symbolic)...")
-    H = LorentzianSimplexSolver.EOMsHessian.compute_Hessian(S, sd)
+    H_ref = LorentzianSimplexSolver.EOMsHessian.compute_Hessian(S_ref, sd_ref)
 
     println("\nEvaluating Hessian matrix...")
-    hess_fns = LorentzianSimplexSolver.SymbolicToJulia.build_hessian_functions(H, sd)
-    H_eval, _ = LorentzianSimplexSolver.EOMsHessian.evaluate_hessian(hess_fns, sd; γ = one(ScalarT))
+    hess_ref_fns = LorentzianSimplexSolver.SymbolicToJulia.build_hessian_functions(H_ref, sd_ref)
+    H_ref_eval, _ = LorentzianSimplexSolver.EOMsHessian.evaluate_hessian(hess_ref_fns, sd_ref; γ = one(ScalarT))
 
-    H_det = det(H_eval)
-    println("The determinant of Hessian matrix is $H_det.")
+    H_ref_det = det(H_ref_eval)
+    println("The determinant of Hessian matrix is $H_ref_det.")
 else
     println("\nSkipping Hessian computing.")
 end

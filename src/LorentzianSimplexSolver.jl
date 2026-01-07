@@ -47,6 +47,7 @@ include("action/DefineAction.jl")                   # spinfoam action
 include("action/SolveVars.jl")                      # solve critical equations
 include("action/SymbolicToJulia.jl")                # Symbolics → Julia
 include("action/EOMsHessian.jl")                    # EOMs and Hessian
+include("action/ReggeAction.jl")                    # Regge action
 
 # ---------------- public API ----------------
 export

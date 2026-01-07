@@ -457,7 +457,7 @@ end
 # ============================================================
 # 20. FULL PIPELINE MAIN FUNCTION
 # ============================================================
-function run_face_xi_matching(geom)
+function run_face_xi_matching(geom; sector::Symbol)
 
     ns = length(geom.simplex)
 
@@ -495,6 +495,14 @@ function run_face_xi_matching(geom)
     sl2cchange = build_sl2cchange(sl2ctest, sl2c_new)
 
     # --------------------------------------------------------
+    # Step extra: Compute the parity SL(2,C) 
+    # --------------------------------------------------------
+
+    if sector === :parity
+        sl2c_new = update_sl2ctest(sl2c_new, sgndet)
+    end
+
+    # --------------------------------------------------------
     # Step 12: Transform bivectors
     # --------------------------------------------------------
     bdybivec55stest_new = transform_bivec(bdybivec55stest, sl2cchange)
@@ -515,21 +523,17 @@ function run_face_xi_matching(geom)
     xi_new = build_xi_from_su(bdysu_new, sgndet, tetareasign, tetn0_new)
 
     # --------------------------------------------------------
-    # Step 16: Update SL(2,C) again
-    # --------------------------------------------------------
-    sl2c_new_new = update_sl2ctest(sl2c_new, sgndet)
-
-    # --------------------------------------------------------
     # UPDATE GEOMETRY IN-PLACE
     # --------------------------------------------------------
     for i in 1:ns
-        geom.simplex[i].solgsl2c   = sl2c_new_new[i]
+        geom.simplex[i].solgsl2c   = sl2c_new[i]
         geom.simplex[i].bdybivec55 = bdybivec55stest_new[i]
         geom.simplex[i].bdyxi         = xi_new[i]
         geom.simplex[i].bdysu         = bdysu_new[i]
         geom.simplex[i].solgso13   = solso13_new[i]
     end
     println("  SL(2,C) matrices updated:      ✓")
+    println("  SL(2,C) parity matrices updated: ✓")
     println("  Boundary bivectors updated:    ✓")
     println("  boundary ξ variables updated:  ✓")
     println("  SU(2)/SU(1,1) elements updated: ✓")
