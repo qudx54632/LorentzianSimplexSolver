@@ -37,7 +37,7 @@ end
 # ------------------------------------------------------------
 # 2. Read simplices
 # ------------------------------------------------------------
-simplices = [[1,2,3,4,5], [1,2,3,5,6], [1,3,4,5,6]]
+simplices = [[1,2,3,4,5]]
 
 ns = length(simplices)
 
@@ -53,11 +53,10 @@ vertex_coords = Dict{Int, Vector{ScalarT}}()
 
 coords_lines = [
     "0, 0, 0, 0",
-    "0, -2.7745276335252114, -0.9809436521275706, -1.6990442448471226",
-    "0, 0, 0, -3.398088489694245",
-    "-0.24028114141347542, -0.6936319083813028, -0.9809436521275706, -1.6990442448471226",
-    "0, 0, -2.942830956382712, -1.6990442448471226",
-    "0.8981365593438019, 2.7437225604241213, -0.9809436521275707, -1.6990442448471226",
+    "0, 0, 0, 1",
+    "0, 0, 1, 1",
+    "0, 1, 1, 1",
+    "1//2, 1, 1, 1",
 ]
 
 for (v, line) in zip(all_vertices, coords_lines)
@@ -79,20 +78,14 @@ end
 geom_base = LorentzianSimplexSolver.GeometryTypes.GeometryCollection(datasets);
 
 # ------------------------------------------------------------
-# 5. Connect simplices + face matching + gauge fixing
+# 5. both orientation construction for single 4-simplex
 # ------------------------------------------------------------
-LorentzianSimplexSolver.KappaOrientation.fix_kappa_signs!(simplices, geom_base)
-
-conn = LorentzianSimplexSolver.FourSimplexConnectivity.build_global_connectivity(simplices, geom_base)
-push!(geom_base.connectivity, conn)
-
 geom_ref    = deepcopy(geom_base)
 geom_parity = deepcopy(geom_base)
-LorentzianSimplexSolver.FaceXiMatching.run_face_xi_matching(geom_ref; sector=:ref)
-LorentzianSimplexSolver.FaceXiMatching.run_face_xi_matching(geom_parity; sector=:parity)
 
-LorentzianSimplexSolver.GaugeFixingSU.run_su2_su11_gauge_fix(geom_ref)
-LorentzianSimplexSolver.GaugeFixingSU.run_su2_su11_gauge_fix(geom_parity)
+sl2c_ref = [geom_base.simplex[i].solgsl2c    for i in 1:ns]
+sgndet = [geom_base.simplex[i].sgndet    for i in 1:ns]
+geom_parity.simplex[1].solgsl2c = LorentzianSimplexSolver.FaceXiMatching.update_sl2ctest(sl2c_ref, sgndet)[1]
 
 # ------------------------------------------------------------
 # 6a. Symbols and action (reference orientation)

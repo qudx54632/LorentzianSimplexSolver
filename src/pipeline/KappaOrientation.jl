@@ -133,7 +133,7 @@ function fix_kappa_signs!(four_simplices, geom)
             end
         end
 
-        println(savedTet)
+        # println(savedTet)
     end
 
     # Write the final κ back into geom
