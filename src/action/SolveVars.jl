@@ -33,6 +33,10 @@ struct SolveData{T<:Real}
     labels_bdry :: Vector{Py}
     values_bdry :: Vector{T}
     flags_bdry  :: BitVector
+
+    labels_j    :: Vector{Py}
+    values_j    :: Vector{T}
+    flags_j     :: BitVector
 end
 
 # ============================================================
@@ -224,6 +228,7 @@ function run_solver(geom)
 
     labels_vars = Py[]; values_vars = T[]; flags_vars = BitVector()
     labels_bdry = Py[]; values_bdry = T[]; flags_bdry = BitVector()
+    labels_j = Py[];    values_j = T[]; flags_j  = BitVector()
 
     # classification sets (string keys)
     bdry_keys = Set(symkey(s) for s in collect_bdry_symbols(geom))
@@ -231,6 +236,7 @@ function run_solver(geom)
 
     seen_vars = Set{String}()
     seen_bdry = Set{String}()
+    seen_j   = Set{String}()
 
     data = compute_bdy_critical_data(geom)
     gdataof, zdataf = data.gdataof, data.zdataf
@@ -265,11 +271,19 @@ function run_solver(geom)
             end
 
             L,V,F = solve_j_var(j_mat[a][i][j], areadataf[a][i][j], tetareasign[a][i][j])
+            for k in eachindex(L)
+                key = symkey(L[k])
+                key in seen_j && continue
+                push!(seen_j, key)
+                push!(labels_j, L[k])
+                push!(values_j, V[k])
+                push!(flags_j,  F[k])
+            end
             distribute!(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry, seen_vars, seen_bdry, L, V, F, bdry_keys, var_keys)
         end
     end
 
-    return SolveData(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry), γsym
+    return SolveData(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry, labels_j, values_j, flags_j), γsym
 end
 
 end # module

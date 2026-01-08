@@ -48,6 +48,7 @@ include("action/SolveVars.jl")                      # solve critical equations
 include("action/SymbolicToJulia.jl")                # Symbolics → Julia
 include("action/EOMsHessian.jl")                    # EOMs and Hessian
 include("action/ReggeAction.jl")                    # Regge action
+include("utils/OrientationSelector.jl")             # Select the orientation of action at critical points
 
 # ---------------- public API ----------------
 export

@@ -161,7 +161,7 @@ if ns > 1
         geom_parity = deepcopy(geom_base)
         LorentzianSimplexSolver.FaceXiMatching.run_face_xi_matching(geom_ref; sector=:ref)
         LorentzianSimplexSolver.FaceXiMatching.run_face_xi_matching(geom_parity; sector=:parity)
-        println("Global connectivity constructed for with all + and all - orientations.")
+        println("Global connectivity constructed for both reference and parity orientations.")
 
         # println("\nRunning final face-matching checks ...")
         LorentzianSimplexSolver.FaceMatchingChecks.check_all(geom_ref)
@@ -187,45 +187,52 @@ end
 # ------------------------------------------------------------
 # 7a. Symbols and action (reference orientation)
 # ------------------------------------------------------------
-println("\nDefining symbols and separating boundary symbols from dynamical variables...")
-LorentzianSimplexSolver.DefineSymbols.run_define_variables(geom_ref)
-sd_ref, _ = LorentzianSimplexSolver.SolveVars.run_solver(geom_ref)
-
-LorentzianSimplexSolver.DefineSymbols.run_define_variables(geom_parity)
-sd_parity, _ = LorentzianSimplexSolver.SolveVars.run_solver(geom_parity)
-
-println("The action contains $(length(sd_ref.labels_vars)) dynamical variables.")
-
 println("\nConstructing the action...")
-S_ref = LorentzianSimplexSolver.DefineAction.compute_action(geom_ref)
-S_parity = LorentzianSimplexSolver.DefineAction.compute_action(geom_parity)
-
-println("\nCompiling action into a Julia function...")
-S_ref_fn, labels_ref = LorentzianSimplexSolver.SymbolicToJulia.build_action_function(S_ref, sd_ref)
-S_parity_fn, labels_parity =  LorentzianSimplexSolver.SymbolicToJulia.build_action_function(S_parity, sd_parity)
-
-println("\nEvaluating the action at the critical point...")
 using Symbolics
 @variables γ
+LorentzianSimplexSolver.DefineSymbols.run_define_variables(geom_ref)
+sd_ref, _ = LorentzianSimplexSolver.SolveVars.run_solver(geom_ref)
+S_ref = LorentzianSimplexSolver.DefineAction.compute_action(geom_ref)
+S_ref_fn, labels_ref = LorentzianSimplexSolver.SymbolicToJulia.build_action_function(S_ref, sd_ref)
 args_ref = LorentzianSimplexSolver.SymbolicToJulia.build_argument_vector(sd_ref, labels_ref, γ)
+args_ref_keep_j = LorentzianSimplexSolver.SymbolicToJulia.build_argument_vector_keep_j(sd_ref, labels_ref, γ)
 S_ref_sym = expand(simplify(S_ref_fn(args_ref...)))
+S_ref_sym_keep_j = expand(simplify(S_ref_fn(args_ref_keep_j...)))
 
+# ------------------------------------------------------------
+# 7b. Symbols and action (parity orientation)
+# ------------------------------------------------------------
+LorentzianSimplexSolver.DefineSymbols.run_define_variables(geom_parity)
+sd_parity, _ = LorentzianSimplexSolver.SolveVars.run_solver(geom_parity)
+S_parity = LorentzianSimplexSolver.DefineAction.compute_action(geom_parity)
+S_parity_fn, labels_parity = LorentzianSimplexSolver.SymbolicToJulia.build_action_function(S_parity, sd_parity)
 args_parity = LorentzianSimplexSolver.SymbolicToJulia.build_argument_vector(sd_parity, labels_parity, γ)
+args_parity_keep_j = LorentzianSimplexSolver.SymbolicToJulia.build_argument_vector_keep_j(sd_parity, labels_parity, γ)
 S_parity_sym = expand(simplify(S_parity_fn(args_parity...)))
+S_parity_sym_keep_j = expand(simplify(S_ref_fn(args_parity_keep_j...)))
 
+# ------------------------------------------------------------
+# 7c. Regge action (parity orientation)
+# ------------------------------------------------------------
 phase = expand(simplify((S_ref_sym+S_parity_sym)//2))
-S_regge = LorentzianSimplexSolver.ReggeAction.run_Regge_action(geom_base)
-println("The Regge action is $S_regge, and the overall phase is $phase")
+S_regge_num,  S_regge_symbolics = LorentzianSimplexSolver.ReggeAction.run_Regge_action(geom_ref, γ);
+println("The Regge action is $S_regge_num, and the common phase is $phase.")
 
-S_pos, S_neg =
-    imag(simplify(S_ref_sym - phase)) >= S_regge ?
-        (S_ref_sym, S_parity_sym) :
-        (S_parity_sym, S_ref_sym)
-label_pos = "S^(" * repeat("+", ns) * ")"
-label_neg = "S^(" * repeat("-", ns) * ")"
-println("The action at the critical point is $label_pos = $S_pos")
-println("The action at the critical point is $label_neg = $S_neg")
+orientation = LorentzianSimplexSolver.OrientationSelector.select_orientation(S_ref_sym_keep_j, S_parity_sym_keep_j, S_regge_symbolics, γ)
 
+if orientation == :ref_neg || orientation == :parity_pos
+    S_pos = expand(simplify(S_parity_sym - phase))
+    S_neg = expand(simplify(S_ref_sym - phase))
+else
+    S_pos = expand(simplify(S_ref_sym - phase))
+    S_neg = expand(simplify(S_parity_sym - phase))
+end
+println("Action at the positive-orientation critical point: $S_pos")
+println("Action at the negative-orientation critical point: $S_neg")
+
+# ------------------------------------------------------------
+# 8. Check equation motions
+# ------------------------------------------------------------
 println("\nWould you like to check the equations of motion? (y/n)")
 if lowercase(strip(readline())) == "y"
     println("\nComputing equations of motion (symbolic)...")

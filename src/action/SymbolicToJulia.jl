@@ -1,6 +1,7 @@
 module SymbolicToJulia
 
 using PythonCall
+using Symbolics
 using ..SolveVars: SolveData
 
 export build_action_function,
@@ -90,6 +91,48 @@ function build_argument_vector(sd::SolveData{T}, labels::Vector{Py}, γ) where {
             j = bdry_index[key]
             v = sd.values_bdry[j]
             vals[i] = (numeric && sd.flags_bdry[j]) ? (v / γ) : v
+
+        else
+            error("No value found for symbol $key")
+        end
+    end
+
+    vals[end] = γ
+    return vals
+end
+
+function build_argument_vector_keep_j(sd::SolveData{T}, labels::Vector{Py}, γ) where {T<:Real}
+
+    sp = _sympy()
+
+    n = length(labels)
+    vals = Vector{Any}(undef, n + 1)  # +1 for γ
+
+    var_index  = Dict(pyconvert(String, sp.sstr(k)) => i
+                      for (i,k) in enumerate(sd.labels_vars))
+    bdry_index = Dict(pyconvert(String, sp.sstr(k)) => i
+                      for (i,k) in enumerate(sd.labels_bdry))
+    j_index    = Dict(pyconvert(String, sp.sstr(k)) => i
+                      for (i,k) in enumerate(sd.labels_j))
+
+    numeric = is_numeric_gamma(γ)
+
+    for (i, lab) in enumerate(labels)
+        key = pyconvert(String, sp.sstr(lab))
+
+        if haskey(j_index, key)
+            # j stays symbolic
+            vals[i] = Symbolics.variable(sympy_to_expr(lab))
+
+        elseif haskey(var_index, key)
+            k = var_index[key]
+            v = sd.values_vars[k]
+            vals[i] = (numeric && sd.flags_vars[k]) ? (v / γ) : v
+
+        elseif haskey(bdry_index, key)
+            k = bdry_index[key]
+            v = sd.values_bdry[k]
+            vals[i] = (numeric && sd.flags_bdry[k]) ? (v / γ) : v
 
         else
             error("No value found for symbol $key")
