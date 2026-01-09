@@ -72,6 +72,7 @@ The interactive script will guide you through:
 
 ## Package structure
 
+```text
 LorentzianSimplexSolver/
 ├── examples/
 │   ├── Delta3_main.jl
@@ -118,6 +119,7 @@ LorentzianSimplexSolver/
 │   └── runtests.jl
 ├── Project.toml
 └── README.md
+```
 
 ## Main components
 
