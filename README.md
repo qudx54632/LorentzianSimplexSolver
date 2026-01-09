@@ -56,6 +56,8 @@ This package is currently intended for research use and is not yet registered in
 
 An interactive driver is provided under examples/.
 
+    include("test/interactive_driver.jl")
+
 From the package root:
 
     julia --project=. examples/interactive_main.jl
