@@ -116,6 +116,53 @@ function solve_g_var(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
     return labels, values, flags
 end
 
+function solve_g_gauge(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
+    sp = _sympy()
+    re, im = sp.re, sp.im
+
+    labels = Py[]
+    values = T[]
+    flags  = BitVector()
+
+    # (1,1)
+    push!(labels, get_sym(re(g_sym[0,0])))
+    push!(values, real(g_num[1,1]))
+    push!(flags, false)
+
+    push!(labels, get_sym(im(g_sym[0,0])))
+    push!(values, imag(g_num[1,1]))
+    push!(flags, false)
+
+    # (1,2)
+    push!(labels, get_sym(re(g_sym[0,1])))
+    push!(values, real(g_num[1,2]))
+    push!(flags, false)
+
+    push!(labels, get_sym(im(g_sym[0,1])))
+    push!(values, imag(g_num[1,2]))
+    push!(flags, false)
+
+    # (2,1)
+    push!(labels, get_sym(re(g_sym[1,0])))
+    push!(values, real(g_num[2,1]))
+    push!(flags, false)
+
+    push!(labels, get_sym(im(g_sym[1,0])))
+    push!(values, imag(g_num[2,1]))
+    push!(flags, false)
+
+    # (2,2)
+    push!(labels, get_sym(re(g_sym[1,1])))
+    push!(values, real(g_num[2,2]))
+    push!(flags, false)
+
+    push!(labels, get_sym(im(g_sym[1,1])))
+    push!(values, imag(g_num[2,2]))
+    push!(flags, false)
+
+    return labels, values, flags
+end
+
 function solve_g_special(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
     sp = _sympy()
     re, im = sp.re, sp.im
@@ -245,6 +292,7 @@ function run_solver(geom)
     gspecialpos = geom.varias[:gspecialPos]
     GaugeFixUpperTriangle = ns > 1 ? geom.connectivity[1]["GaugeFixUpperTriangle"] :
                                      Vector{Vector{Int}}()
+    GaugeTet = geom.connectivity[1]["GaugeTet"]
 
     kappa       = [geom.simplex[a].kappa       for a in 1:ns]
     tetareasign = [geom.simplex[a].tetareasign for a in 1:ns]
@@ -252,8 +300,10 @@ function run_solver(geom)
     for a in 1:ns, i in 1:ntet
         pos_gspecial = find_position_in_chain([a,i], gspecialpos)
         pos_gupper   = find_position_in_chain([a,i], GaugeFixUpperTriangle)
+        pos_gauge    = find_position_in_chain([a,i], GaugeTet)
 
-        L,V,F = pos_gspecial !== nothing ? solve_g_special(g_mat[a][i], gdataof[a][i]) :
+        L,V,F = pos_gauge    !== nothing ? solve_g_gauge(g_mat[a][i], gdataof[a][i]) :
+                pos_gspecial !== nothing ? solve_g_special(g_mat[a][i], gdataof[a][i]) :
                 pos_gupper   !== nothing ? solve_g_upper(g_mat[a][i], gdataof[a][i]) :
                                            solve_g_var(g_mat[a][i], gdataof[a][i])
 

@@ -191,11 +191,11 @@ function so4_from_so3(SO, sgndet)
         A[2:4, 2:4] .= SO
     else
         A[1:3, 1:3] .= SO
-        A[4,4] = -one(T)
+        A[4,4] = one(T)
     end
-    if A[1,1] <= zero(T)
-        A .= -A
-    end
+    # if A[1,1] <= zero(T)
+    #     A .= -A
+    # end
     return A
 end
 
@@ -326,16 +326,16 @@ function sl2c_from_so13(Λ::AbstractMatrix{T}, sgndet::Int) where {T<:Real}
     # 3. Exponentiate
     # -------------------------------------------------
     if T == BigFloat
-        g = T(sgndet) * exp_sl2(T(sgndet) * X)
+        g = T(sgndet) * exp_sl2(X)
     else 
-        g = T(sgndet) * exp(T(sgndet) * X)
+        g = T(sgndet) * exp(X)
     end
     # -------------------------------------------------
     # 4. Normalize determinant (numerical safety)
     # -------------------------------------------------
     g ./= sqrt(det(g))
 
-    return g
+    return T(sgndet) * g
 end
 
 # ============================================================
@@ -476,11 +476,12 @@ function run_face_xi_matching(geom; sector::Symbol)
     # Step 1–9: SO(3), SO(1,2), normals, SO(1,3)
     # --------------------------------------------------------
     Tetchange      = compute_tetchange(sharedTetsPos)
-    SO3            = build_SO_matrix(nabtest, sharedTetsPos, Tetchange, sgndet)
-    TetsReflection = find_reflecting_tets(SO3)
+    SO3Test        = build_SO_matrix(nabtest, sharedTetsPos, Tetchange, sgndet)
+    TetsReflection = find_reflecting_tets(SO3Test)
     nab4           = build_nabtest4d_from_3d(nabtest, sgndet)
     nab4_flip      = flip_4d_normals(nab4, TetsReflection)
     nab1           = build_nabtest1(nab4_flip, sgndet)
+    SO3            = build_SO_matrix(nab1, sharedTetsPos, Tetchange, sgndet)
     SO4            = build_SO4_all(SO3, sgndet)
     solso13_new    = build_SO13_corrected(solgso13, TetsReflection, Tetchange, SO4)
 

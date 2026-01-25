@@ -214,7 +214,7 @@ S_parity_sym_keep_j = expand(simplify(S_ref_fn(args_parity_keep_j...)))
 # ------------------------------------------------------------
 # 7c. Regge action (parity orientation)
 # ------------------------------------------------------------
-phase = expand(simplify((S_ref_sym+S_parity_sym)//2))
+phase = expand(simplify((S_ref_sym+S_parity_sym)*(1//2)))
 S_regge_num,  S_regge_symbolics = LorentzianSimplexSolver.ReggeAction.run_Regge_action(geom_ref, γ);
 println("The Regge action is $S_regge_num, and the common phase is $phase.")
 

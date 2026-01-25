@@ -82,9 +82,9 @@ function build_g_variables(num_vertex::Int, GaugeTet::Vector{Vector{Int}}, gspec
                         g1[5] + g1[6]*I          (1 + g1[3]*g1[5] + I*g1[4]*g1[5] + I*g1[3]*g1[6] - g1[4]*g1[6]) /(1 + g1[1] + g1[2]*I)]))
                 append!(g_var, g1)
             elseif pos_gauge !== nothing && pos_gspecial === nothing && pos_gupper === nothing
-                g1 = collect(sp.symbols("g_$(a)$(b)_1:7", real=true))
-                g_mat[a][b] = sp.simplify(sp.Matrix([1 + g1[1] + g1[2]*I      g1[3] + g1[4]*I;
-                        g1[5] + g1[6]*I          (1 + g1[3]*g1[5] + I*g1[4]*g1[5] + I*g1[3]*g1[6] - g1[4]*g1[6]) /(1 + g1[1] + g1[2]*I)]))
+                g1 = collect(sp.symbols("g_$(a)$(b)_1:9", real=true))
+                g_mat[a][b] = sp.Matrix([g1[1] + g1[2]*I      g1[3] + g1[4]*I; 
+                                        g1[5] + g1[6]*I      g1[7] + g1[8]*I])
                 append!(g_bdry, g1)
             elseif pos_gauge === nothing && pos_gspecial !== nothing && pos_gupper === nothing
                 g1 = collect(sp.symbols("g_$(a)$(b)_1:7", real=true))
