@@ -154,6 +154,10 @@ function compute_bdy_critical_data(geom)
     zdataf  = compute_zdataf(kappa, tetareasign, gdataof, xi_final)
     areadataf  = areas
 
+    for i in 1:ns
+        geom.simplex[i].zdataf  = zdataf[i]
+    end
+
     return (gdataof = gdataof,
             xisoln  = xisoln,
             zdataf  = zdataf,
