@@ -163,9 +163,11 @@ if ns > 1
         LorentzianSimplexSolver.FaceXiMatching.run_face_xi_matching(geom_parity; sector=:parity)
         println("Global connectivity constructed for both reference and parity orientations.")
 
-        # println("\nRunning final face-matching checks ...")
-        LorentzianSimplexSolver.FaceMatchingChecks.check_all(geom_ref)
-        LorentzianSimplexSolver.FaceMatchingChecks.check_all(geom_parity)
+        println("\nWould you like to check parallel transport conditions and closure conditions after face matching? (y or n)")
+        if lowercase(strip(readline())) == "y"
+            LorentzianSimplexSolver.FaceMatchingChecks.check_all(geom_ref)
+            LorentzianSimplexSolver.FaceMatchingChecks.check_all(geom_parity)
+        end
 
         println("\nPerform SU(2) and SU(1,1) gauge fixing ...")
         LorentzianSimplexSolver.GaugeFixingSU.run_su2_su11_gauge_fix(geom_ref)

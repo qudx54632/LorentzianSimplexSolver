@@ -533,12 +533,12 @@ function run_face_xi_matching(geom; sector::Symbol)
         geom.simplex[i].bdysu         = bdysu_new[i]
         geom.simplex[i].solgso13   = solso13_new[i]
     end
-    println("  SL(2,C) matrices updated:      ✓")
-    println("  SL(2,C) parity matrices updated: ✓")
-    println("  Boundary bivectors updated:    ✓")
-    println("  boundary ξ variables updated:  ✓")
-    println("  SU(2)/SU(1,1) elements updated: ✓")
-    println("  SO(1,3) frames corrected:       ✓\n")
+    # println("  SL(2,C) matrices updated:      ✓")
+    # println("  SL(2,C) parity matrices updated: ✓")
+    # println("  Boundary bivectors updated:    ✓")
+    # println("  boundary ξ variables updated:  ✓")
+    # println("  SU(2)/SU(1,1) elements updated: ✓")
+    # println("  SO(1,3) frames corrected:       ✓\n")
     # --------------------------------------------------------
     # FINAL return 
     # --------------------------------------------------------
