@@ -20,7 +20,7 @@ include("geometry/TetraNormals.jl")                # tetrahedron normals
 include("geometry/DihedralAngles.jl")              # dihedral angles
 include("algebra/LorentzGroup.jl")                 # SO(1,3), SL(2,C) actions
 include("geometry/ThreeDTetra.jl")                 # intrinsic 3D tetra geometry
-include("geometry/volume.jl")                      # volumes
+include("geometry/Volume.jl")                      # volumes
 
 # ---------------- bivectors and group data ----------------
 include("algebra/Su2Su11FromBivector.jl")           # SU(2)/SU(1,1) from bivectors
