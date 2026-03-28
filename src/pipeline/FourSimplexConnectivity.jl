@@ -163,33 +163,54 @@ function orderBulk(FacesPosition, sharedTetsPos, k)
 
     isempty(selectlinks) && return FacesPosition[k]
 
-    templist = selectlinks[1]
-    target_len = length(vcat(selectlinks...))
+    used = falses(length(selectlinks))
+    chain = [selectlinks[1]]
+    used[1] = true
+    current = chain[1][2][1]
 
-    while length(templist) < target_len
-        value = templist[end][1]
-        pos_all = find_positions_value(selectlinks, value)
-        pos = [p for p in pos_all if p[end] == 1]
+    nextinds = [
+        i for i in eachindex(selectlinks)
+        if !used[i] && any(x -> x[1] == current, selectlinks[i])
+    ]
 
-        for p in pos
-            i, j = p[1], p[2]
-            pair = selectlinks[i][j]
-
-            if any(x -> x == pair, templist)
-                continue
-            end
-
-            push!(templist, pair)
-
-            other = j == 1 ? 2 : 1
-            push!(templist, selectlinks[i][other])
-        end
+    if isempty(nextinds)
+        chain = [[selectlinks[1][2], selectlinks[1][1]]]
+        current = chain[1][2][1]
     end
 
-    tempfaces = [fp[1:2] for fp in FacesPosition[k]]
-    posnew = [findfirst(x -> x == f, tempfaces) for f in templist]
+    while count(!, used) > 0
+        nextinds = [
+            i for i in eachindex(selectlinks)
+            if !used[i] && any(x -> x[1] == current, selectlinks[i])
+        ]
 
-    return [FacesPosition[k][i] for i in posnew]
+        isempty(nextinds) && break
+
+        i = first(nextinds)
+
+        if selectlinks[i][1][1] == current
+            push!(chain, selectlinks[i])
+            current = selectlinks[i][2][1]
+        else
+            push!(chain, [selectlinks[i][2], selectlinks[i][1]])
+            current = selectlinks[i][1][1]
+        end
+
+        used[i] = true
+    end
+
+    templist = reduce(vcat, chain)
+    posnew = [findfirst(x -> x == f, tempfaces) for f in templist]
+    output0 = [FacesPosition[k][i] for i in posnew if i !== nothing]
+
+    if length(output0) == length(FacesPosition[k])
+        return output0
+    else
+        head = [output0[1][1], output0[1][3], output0[1][2]]
+        tail = [output0[end][1], output0[end][3], output0[end][2]]
+        return vcat([head], output0, [tail])
+    end
+
 end
 
 function order_bulk_faces_all(BulkFacesPos, sharedTetsPos)
@@ -207,14 +228,9 @@ function order_bdry_faces(FacesPosition, sharedTetsPos, k)
         return faces_k
     end
 
-    inner = orderBulk(FacesPosition, sharedTetsPos, k)
-    comp = [f for f in faces_k if !(f in inner)]
-
-    if comp[1][1] == inner[1][1]
-        return vcat([comp[1]], inner, [comp[2]])
-    else
-        return vcat([comp[2]], inner, [comp[1]])
-    end
+    bdfaces = orderBulk(FacesPosition, sharedTetsPos, k)
+  
+    return bdfaces
 end
 
 function order_bdry_faces_all(BDFacesPos, sharedTetsPos)

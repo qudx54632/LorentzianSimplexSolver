@@ -65,11 +65,13 @@ function get3dtet(tetedgevec::AbstractVector{<:AbstractVector{T}},
     tol = T(get_tolerance())
     zero_positions = findall(x -> isapprox(x, zero(T), atol=tol), sum_components)
 
-    if length(zero_positions) != 1
+    valid_positions = intersect(zero_positions, (1, 4))
+
+    if length(valid_positions) != 1
         error("Could not identify unique 0-component. Check your data.")
     end
 
-    pos = zero_positions[1]
+    pos = valid_positions[1]
 
     tet3d = [v[setdiff(1:ncomp, (pos,))] for v in tet4d]
 
