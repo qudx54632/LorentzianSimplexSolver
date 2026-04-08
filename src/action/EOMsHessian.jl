@@ -1,103 +1,67 @@
 module EOMsHessian
 
-using PythonCall
+using SymEngine
 using ..SolveVars: SolveData
 using ..PrecisionUtils: get_tolerance
-using ..SymbolicToJulia: build_argument_vector
-
+using ..ActionEvaluation: build_value_dict, eval_symbolic
 
 export compute_EOMs, compute_Hessian, check_EOMs, evaluate_hessian
 
-const _sympy_ref = Ref{Union{Py,Nothing}}(nothing)
-
-@inline function _sympy()
-    s = _sympy_ref[]
-    if s === nothing
-        s = pyimport("sympy")
-        _sympy_ref[] = s
-    end
-    return s
-end
 # ============================================================
 # Equations of motion
-#
-# Input:
-#   S  :: Py                 (SymPy expression)
-#   sd :: SolveVars.SolveData
-#
-# Output:
-#   Dict{Py,Py}   v ↦ ∂S/∂v
 # ============================================================
-function compute_EOMs(S::Py, sd::SolveData)
-    sp = _sympy()
-    dS = Dict{Py,Py}()
+function compute_EOMs(S::Basic, sd::SolveData)
+    dS = Dict{Basic,Basic}()
 
     for v in sd.labels_vars
-        dS[v] = sp.diff(S, v)
+        dS[v] = SymEngine.diff(S, v)
     end
 
     return dS
 end
 
-
 # ============================================================
 # Hessian
-#
-# Input:
-#   S  :: Py
-#   sd :: SolveVars.SolveData
-#
-# Output:
-#   Dict{Tuple{Py,Py},Py}   (v,w) ↦ ∂²S/∂v∂w
 # ============================================================
-function compute_Hessian(S::Py, sd::SolveData)
-    sp = _sympy()
+function compute_Hessian(S::Basic, sd::SolveData)
     vars = sd.labels_vars
-    H = Dict{Tuple{Py,Py},Py}()
+    H = Dict{Tuple{Basic,Basic},Basic}()
 
     for v1 in vars
-        dS_v1 = sp.diff(S, v1)
+        dS_v1 = SymEngine.diff(S, v1)
         for v2 in vars
-            H[(v1, v2)] = sp.diff(dS_v1, v2)
+            H[(v1, v2)] = SymEngine.diff(dS_v1, v2)
         end
     end
 
     return H
 end
 
-# ------------------------------------------------------------
-# Evaluate all gradient functions at γ = 1 and check EOMs
-# ------------------------------------------------------------
-function check_EOMs(grad_fns::Dict{Py,Function}, sd::SolveData; γ = 1)
-    sp = _sympy()
+# ============================================================
+# Evaluate EOMs numerically
+# ============================================================
+function check_EOMs(dS::Dict{Basic,Basic}, sd::SolveData; γ=1)
+
     tol = get_tolerance()
+    γsym = symbols("gamma")
+
+    vals = build_value_dict(sd, γsym; γval=γ)
+
     all_zero = true
-    args = build_argument_vector(sd, vcat(sd.labels_vars, sd.labels_bdry), γ)
 
-    for (v, dS_fn) in grad_fns
+    for (v, expr) in dS
+        val_sym = eval_symbolic(expr, vals)
 
-        val = dS_fn(args...)
+        # convert to numeric
+        val = complex(Float64(N(real(val_sym))),
+                      Float64(N(imag(val_sym))))
 
-        # ----------------------------------------------------
-        # Extract real / imaginary parts
-        # ----------------------------------------------------
-        if val isa Real
-            re_val = abs(val)
-            im_val = 0.0
+        re_val = abs(real(val))
+        im_val = abs(imag(val))
 
-        elseif val isa Complex
-            re_val = abs(real(val))
-            im_val = abs(imag(val))
-        else
-            error("Unsupported value type: $(typeof(val))")
-        end
-
-        # ----------------------------------------------------
-        # Threshold test
-        # ----------------------------------------------------
         if re_val > tol || im_val > tol
-            println("✘ dS/d$(sp.sstr(v)) ≠ 0")
-            println("    |Re| = $re_val, |Im| = $im_val")
+            println("✘ dS/d$(v) ≠ 0")
+            println("|Re| = $re_val, |Im| = $im_val")
             all_zero = false
         end
     end
@@ -111,50 +75,39 @@ function check_EOMs(grad_fns::Dict{Py,Function}, sd::SolveData; γ = 1)
     return nothing
 end
 
-
-function evaluate_hessian(hess_fns::Dict{Tuple{Py,Py}, Function},
+# ============================================================
+# Evaluate Hessian numerically
+# ============================================================
+function evaluate_hessian(Hsym::Dict{Tuple{Basic,Basic},Basic},
                           sd::SolveData{T};
                           γ = one(T)) where {T<:Real}
-    sp = _sympy()
-    # Hessian is only over variables used in differentiation
+
+    γsym = symbols("gamma")
+    vals = build_value_dict(sd, γsym; γval=γ)
+
     labels = sd.labels_vars
     n = length(labels)
 
-    # symbol -> index (vars only)
-    index = Dict(pyconvert(String, sp.sstr(v)) => i
-                 for (i, v) in enumerate(labels))
+    index = Dict(string(v) => i for (i, v) in enumerate(labels))
 
-    # allocate
     H = Matrix{Complex{T}}(undef, n, n)
     fill!(H, zero(Complex{T}))
 
-    # NOTE: your generated functions expect (vars..., bdry..., gamma)
-    # so argument vector must still include BOTH vars and bdry.
-    full_labels = vcat(sd.labels_vars, sd.labels_bdry)
-    args = build_argument_vector(sd, full_labels, γ)
-
-    # loop upper triangle only
-    for ((v1, v2), h_fn) in hess_fns
-        i = index[pyconvert(String, sp.sstr(v1))]
-        j = index[pyconvert(String, sp.sstr(v2))]
+    for ((v1, v2), expr) in Hsym
+        i = index[string(v1)]
+        j = index[string(v2)]
         j < i && continue
 
-        val = h_fn(args...)
+        val_sym = eval_symbolic(expr, vals)
 
-        hij = if val isa Real
-            Complex{T}(T(val), zero(T))
-        elseif val isa Complex
-            Complex{T}(T(real(val)), T(imag(val)))
-        else
-            error("Unsupported Hessian entry type: $(typeof(val))")
-        end
+        val = complex(Float64(N(real(val_sym))),
+                      Float64(N(imag(val_sym))))
 
-        H[i, j] = hij
-        H[j, i] = hij
+        H[i, j] = val
+        H[j, i] = val
     end
 
     return H, labels
 end
-
 
 end # module

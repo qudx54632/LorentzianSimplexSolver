@@ -1,32 +1,62 @@
 module DefineAction
 
+using LinearAlgebra
+using SymEngine
 using ..SpinAlgebra: σ3
-
-using PythonCall
-# sympy = pyimport("sympy")
 
 export γsym, compute_action
 
-const _sympy_ref = Ref{Union{Py,Nothing}}(nothing)
-const _gamma_ref = Ref{Union{Py,Nothing}}(nothing)
+const _I = Ref{Union{Basic,Nothing}}(nothing)
+const _γ = Ref{Union{Basic,Nothing}}(nothing)
 
-@inline function _sympy()
-    s = _sympy_ref[]
-    if s === nothing
-        s = pyimport("sympy")
-        _sympy_ref[] = s
-    end
-    return s
+function __init__()
+    _I[] = SymEngine.Basic(im)
+    _γ[] = symbols("gamma")
 end
 
-@inline function γsym()
-    g = _gamma_ref[]
-    if g === nothing
-        sp = _sympy()
-        g = sp.symbols("gamma", real=true)
-        _gamma_ref[] = g
-    end
-    return g
+@inline γsym() = _γ[]
+
+@inline function sconj_real(expr)
+    return SymEngine.subs(expr, Dict(_I[] => -_I[]))
+end
+
+@inline col(v) = reshape(v, :, 1)
+@inline herm(v) = transpose(map(sconj_real, col(v)))  
+
+@inline slog(x) = SymEngine.log(x)
+@inline ssqrt(x) = SymEngine.sqrt(x)
+
+@inline symzero(x) = x - x
+@inline symone(x) = symzero(x) + 1
+
+# ============================================================
+# small helpers
+# ============================================================
+@inline function meta_det(meta)::Int
+    return Int(round(real(det(meta))))
+end
+
+@inline function scalar_A(xi, z, g, meta; signzz::Int=1)
+    xiC = col(xi)
+    zC  = col(z)
+    gt  = transpose(g)
+    Z   = gt * zC
+    return (signzz * (herm(xiC) * meta * Z))[1,1]
+end
+
+@inline function scalar_B(xi, z, g, meta; signzz::Int=1)
+    xiC = col(xi)
+    zC  = col(z)
+    gt  = transpose(g)
+    Z   = gt * zC
+    return (signzz * (herm(Z) * meta * xiC))[1,1]
+end
+
+@inline function scalar_C(z, g, meta; signzz::Int=1)
+    zC = col(z)
+    gt = transpose(g)
+    Z  = gt * zC
+    return (signzz * (herm(Z) * meta * Z))[1,1]
 end
 
 # ============================================================
@@ -34,77 +64,48 @@ end
 # xiZ = \[\left(m_{ef}\,\langle \xi_{ef}, Z_{vef} \rangle \right)^{\frac{\kappa_{ef} + \det \eta_e}{2}}\]
 # Zxi = \[\left(m_{ef}\,\langle Z_{vef} , \xi_{ef} \rangle \right)^{\frac{-\kappa_{ef} + \det \eta_e}{2}}\]
 # ============================================================
-function halfedgeactionXiZ(xi::Py, z::Py, g::Py, κ::Int, meta::Py; signzz::Int=1)
-    
-    sp = _sympy()
-    κpy  = Py(κ)
-    half = sp.Rational(1, 2)
+function halfedgeactionXiZ(xi, z, g, κ::Int, meta; signzz::Int=1)
+    detm = meta_det(meta)
 
-    detm = meta.det()
-    gt   = g.T
+    A = scalar_A(xi, z, g, meta; signzz=signzz)
+    B = scalar_B(xi, z, g, meta; signzz=signzz)
 
-    # scalars (1×1 matrices -> take [0])
-    A = (signzz * (xi.conjugate().T * meta * gt * z))[0]
-    B = (signzz * ((gt * z).conjugate().T * meta * xi))[0]
+    e1 = (κ + detm) ÷ 2
+    e2 = (-κ + detm) ÷ 2
 
-    e1 = (κpy + detm) * half
-    e2 = (-κpy + detm) * half
-
-    expr = A^e1 * B^e2
-
-    return expr
+    return A^e1 * B^e2
 end
 
 # ============================================================
 # Spacelike Z-Z contribution
-# ZZ = (i\gamma\kappa - \det \eta_e)\[\log(\langle Z_{vef}, Z_{vef} \rangle)\]
+# ZZ = (i\gamma\kappa - \det \eta_e)\[\Symbolics.Symbolics.log(\langle Z_{vef}, Z_{vef} \rangle)\]
 # ============================================================
-function halfedgeactionZZ(xi::Py, z::Py, g::Py, κ::Int, meta::Py;
-                          signzz::Int = 1, γ::Py)
-    sp = _sympy()
-    safe_log = sp.log
-    # Transpose of g
-    gt = g.T
-
-    # scalar contraction (take [0] to extract scalar)
-    C = (signzz * ((gt * z).conjugate().T * meta * gt * z))[0]
-
-    return (sp.I * γ * κ  - meta.det()) * safe_log(C)
+function halfedgeactionZZ(xi, z, g, κ::Int, meta; signzz::Int=1, γ=γsym())
+    detm = meta_det(meta)
+    C = scalar_C(z, g, meta; signzz=signzz)
+    return (_I[] * γ * κ - detm) * slog(C)
 end
 
 # ============================================================
 # Timelike Xi–Z contribution
-# XZ_t = ( sqrt( <xi , Z> / <Z , xi> ) )^κ
+# XZ_t = ( ssqrt( <xi , Z> / <Z , xi> ) )^κ
 # where Z = g^T z
 # ============================================================
-function halfedgeactiontXiZ(xi::Py, z::Py, g::Py, κ::Int, meta::Py;
-                            signzz::Int = 1)
-
-    gt = g.T
-    sp = _sympy()
-    safe_sqrt = sp.sqrt
-
-    A = (signzz * (xi.conjugate().T * meta * gt * z))[0]
-    B = (signzz * ((gt * z).conjugate().T * meta * xi))[0]
-
-    return (safe_sqrt(A / B))^κ
+function halfedgeactiontXiZ(xi, z, g, κ::Int, meta; signzz::Int=1)
+    A = scalar_A(xi, z, g, meta; signzz=signzz)
+    B = scalar_B(xi, z, g, meta; signzz=signzz)
+    return (ssqrt(A / B))^κ
 end
 
 # ============================================================
 # Timelike Z–Z contribution
-# ZZ_t = -(i/γ) κ log( <xi , Z> <Z , xi> )
+# ZZ_t = -(i/γ) κ Symbolics.log( <xi , Z> <Z , xi> )
 # where Z = g^T z
 # ============================================================
-function halfedgeactiontZZ(xi::Py, z::Py, g::Py, κ::Int, meta::Py;
-                           signzz::Int = 1, γ::Py)
-
-    gt = g.T
-    sp = _sympy()
-    safe_log = sp.log
-    A = (xi.conjugate().T * meta * gt * z)[0]
-    B = ((gt * z).conjugate().T * meta * xi)[0]
-
-    return -(sp.I / γ) * κ * safe_log(A * B)
+function halfedgeactiontZZ(xi, z, g, κ::Int, meta; signzz::Int=1, γ=γsym())
+    A = scalar_A(xi, z, g, meta; signzz=1)
+    B = scalar_B(xi, z, g, meta; signzz=1)
+    return -(_I[] / γ) * κ * slog(A * B)
 end
 
 # ============================================================
@@ -113,14 +114,15 @@ end
 # Only defined for orientation (κ2, κ3) = (-1, +1)
 # Returns <Z_2 , Z_3>
 # ============================================================
-function edgebulkactionssZZ1(zs::Tuple{Py,Py}, gs::Tuple{Py,Py}, κs::Tuple{Int,Int})
-
+function edgebulkactionssZZ1(zs, gs, κs)
     z1, z3 = zs
     g2, g3 = gs
     κ2, κ3 = κs
 
     if κ2 == -1 && κ3 == 1
-        return ((g2.T * z1).conjugate().T * (g3.T * z3))[0]
+        Z2 = transpose(g2) * col(z1)
+        Z3 = transpose(g3) * col(z3)
+        return (herm(vec(Z2)) * Z3)[1,1]
     else
         error("Wrong orientation")
     end
@@ -131,25 +133,19 @@ end
 #
 # Only defined for orientation (κ2, κ3) = (-1, +1)
 #
-# 2 (iγ - 1) log sqrt(<Z3,Z3>) - 2 (iγ + 1) log sqrt(<Z2,Z2>)
+# 2 (iγ - 1) log ssqrt(<Z3,Z3>) - 2 (iγ + 1) log ssqrt(<Z2,Z2>)
 # ============================================================
-function edgebulkactionssZZ2(zs::Tuple{Py,Py}, gs::Tuple{Py,Py}, κs::Tuple{Int,Int}; γ::Py)
-
+function edgebulkactionssZZ2(zs, gs, κs; γ=γsym())
     z1, z3 = zs
     g2, g3 = gs
     κ2, κ3 = κs
 
-    sp = _sympy()
-    safe_log = sp.log
-    safe_sqrt = sp.sqrt
-
     if κ2 == -1 && κ3 == 1
-        Z3 = g3.T * z3
-        Z2 = g2.T * z1
+        Z3 = transpose(g3) * col(z3)
+        Z2 = transpose(g2) * col(z1)
 
-        term3 = 2 * (sp.I * γ - 1) * safe_log(safe_sqrt((Z3.conjugate().T * Z3)[0]))
-
-        term2 = 2 * (sp.I * γ + 1) * safe_log(safe_sqrt((Z2.conjugate().T * Z2)[0]))
+        term3 = 2 * (_I[] * γ - 1) * slog(ssqrt((herm(vec(Z3)) * Z3)[1,1]))
+        term2 = 2 * (_I[] * γ + 1) * slog(ssqrt((herm(vec(Z2)) * Z2)[1,1]))
 
         return term3 - term2
     else
@@ -163,37 +159,36 @@ end
 # facesign > 0 : spacelike face (product structure)
 # facesign ≤ 0 : timelike face (product of timelike half-edges)
 # ============================================================
-function faceactionXiZ(xilist, zlist, glist,
-                        κlist, metalist, sgndetlist;
-                        facesign::Int = 1)
-
+function faceactionXiZ(xilist, zlist, glist, κlist, metalist, sgndetlist; facesign::Int=1)
     n = length(glist)
 
     if facesign > 0
-        # --- first half-edge ---
-        res = halfedgeactionXiZ(xilist[1], zlist[1], glist[1], κlist[1], metalist[1,1]; signzz=metalist[1,2])
+        res = halfedgeactionXiZ(xilist[1], zlist[1], glist[1], κlist[1], metalist[1,1];
+                                signzz=metalist[1,2])
 
-        # --- bulk contributions ---
         for i in 2:2:(n-1)
             if sgndetlist[i] == 1
-                res *= edgebulkactionssZZ1((zlist[i-1], zlist[i+1]),(glist[i], glist[i+1]), (κlist[i], κlist[i+1]))
+                res *= edgebulkactionssZZ1((zlist[i-1], zlist[i+1]),
+                                           (glist[i], glist[i+1]),
+                                           (κlist[i], κlist[i+1]))
             else
-                res *= halfedgeactionXiZ(xilist[i], zlist[i-1], glist[i],κlist[i], metalist[i,1]; signzz=metalist[i,2]) *
-                       halfedgeactionXiZ(xilist[i+1], zlist[i+1], glist[i+1],κlist[i+1], metalist[i+1,1]; signzz=metalist[i+1,2])
+                res *= halfedgeactionXiZ(xilist[i], zlist[i-1], glist[i], κlist[i], metalist[i,1];
+                                         signzz=metalist[i,2]) *
+                       halfedgeactionXiZ(xilist[i+1], zlist[i+1], glist[i+1], κlist[i+1], metalist[i+1,1];
+                                         signzz=metalist[i+1,2])
             end
         end
 
-        # --- last half-edge ---
-        res *= halfedgeactionXiZ(xilist[end], zlist[end-1], glist[end],κlist[end], metalist[end,1]; signzz=metalist[end,2])
+        res *= halfedgeactionXiZ(xilist[end], zlist[end-1], glist[end], κlist[end], metalist[end,1];
+                                 signzz=metalist[end,2])
 
         return res
-
     else
-        # --- timelike face ---
-        res = one(Py)
+        res = symone(xilist[1][1])
         for i in eachindex(xilist)
-            zidx = isodd(i) ? i : i-1
-            res *= halfedgeactiontXiZ(xilist[i], zlist[zidx], glist[i],κlist[i], metalist[i,1];signzz=metalist[i,2])
+            zidx = isodd(i) ? i : i - 1
+            res *= halfedgeactiontXiZ(xilist[i], zlist[zidx], glist[i], κlist[i], metalist[i,1];
+                                      signzz=metalist[i,2])
         end
         return res
     end
@@ -205,92 +200,88 @@ end
 # facesign > 0 : spacelike face (sum structure)
 # facesign ≤ 0 : timelike face (sum of timelike ZZ terms)
 # ============================================================
-function faceactionBDZZ(xilist, zlist, glist, κlist, metalist, sgndetlist;
-                        facesign::Int = 1, γ::Py = γsym())
-
+function faceactionBDZZ(xilist, zlist, glist, κlist, metalist, sgndetlist; facesign::Int=1, γ=γsym())
     n = length(glist)
 
     if facesign > 0
         res = halfedgeactionZZ(xilist[1], zlist[1], glist[1], κlist[1], metalist[1,1];
-                               signzz = metalist[1,2], γ = γ)
+                               signzz=metalist[1,2], γ=γ)
 
         for i in 2:2:(n-1)
             if sgndetlist[i] == 1
                 res += edgebulkactionssZZ2((zlist[i-1], zlist[i+1]),
-                                          (glist[i], glist[i+1]),
-                                          (κlist[i], κlist[i+1]);
-                                          γ = γ)
+                                           (glist[i], glist[i+1]),
+                                           (κlist[i], κlist[i+1]);
+                                           γ=γ)
             else
                 res += halfedgeactionZZ(xilist[i], zlist[i-1], glist[i], κlist[i], metalist[i,1];
-                                        signzz = metalist[i,2], γ = γ) +
+                                        signzz=metalist[i,2], γ=γ) +
                        halfedgeactionZZ(xilist[i+1], zlist[i+1], glist[i+1], κlist[i+1], metalist[i+1,1];
-                                        signzz = metalist[i+1,2], γ = γ)
+                                        signzz=metalist[i+1,2], γ=γ)
             end
         end
 
         res += halfedgeactionZZ(xilist[end], zlist[end-1], glist[end], κlist[end], metalist[end,1];
-                                signzz = metalist[end,2], γ = γ)
+                                signzz=metalist[end,2], γ=γ)
 
         return res
     else
-        res = Py(0)
+        res = symzero(xilist[1][1])
         for i in eachindex(xilist)
-            zidx = isodd(i) ? i : i-1
+            zidx = isodd(i) ? i : i - 1
             res += halfedgeactiontZZ(xilist[i], zlist[zidx], glist[i], κlist[i], metalist[i,1];
-                                     signzz = metalist[i,2], γ = γ)
+                                     signzz=metalist[i,2], γ=γ)
         end
         return res
     end
 end
 
 function bulkfaceactionttXiZ(xilist, zlist, glist, κlist, metalist)
-    res = one(Py) # multiplicative identity
-
+    res = symone(xilist[1][1])
     for i in eachindex(xilist)
         zidx = iseven(i) ? i : (i == firstindex(xilist) ? lastindex(zlist) : i - 1)
-
-        res *= halfedgeactiontXiZ(xilist[i],zlist[zidx],glist[i],κlist[i],metalist[i, 1];signzz=metalist[i, 2])
+        res *= halfedgeactiontXiZ(xilist[i], zlist[zidx], glist[i], κlist[i], metalist[i,1];
+                                  signzz=metalist[i,2])
     end
-
     return res
 end
 
-function bulkfaceactionttZZ(xilist, zlist, glist, κlist, metalist; γ::Py = γsym())
-    res = Py(0)
+function bulkfaceactionttZZ(xilist, zlist, glist, κlist, metalist; γ=γsym())
+    res = symzero(xilist[1][1])
     for i in eachindex(xilist)
         zidx = iseven(i) ? i : (i == firstindex(xilist) ? lastindex(zlist) : i - 1)
         res += halfedgeactiontZZ(xilist[i], zlist[zidx], glist[i], κlist[i], metalist[i,1];
-                                 signzz = metalist[i,2], γ = γ)
+                                 signzz=metalist[i,2], γ=γ)
     end
     return res
 end
 
 function bulkfaceactionsXiZ(xilist, zlist, glist, κlist, metalist, sgndetlist)
-    res = one(Py)
-    I0  = firstindex(glist)
+    res = symone(xilist[1][1])
+    I0 = firstindex(glist)
     Iend = lastindex(glist)
 
     for i in I0:2:Iend
         zim1 = (i == I0) ? lastindex(zlist) : i - 1
 
         if sgndetlist[i] == 1
-            res *= edgebulkactionssZZ1(
-                (zlist[zim1], zlist[i + 1]),
-                (glist[i], glist[i + 1]),
-                (κlist[i], κlist[i + 1])
-            )
+            res *= edgebulkactionssZZ1((zlist[zim1], zlist[i+1]),
+                                       (glist[i], glist[i+1]),
+                                       (κlist[i], κlist[i+1]))
         else
-            res *= halfedgeactionXiZ(xilist[i], zlist[zim1], glist[i], κlist[i],metalist[i, 1]; signzz=metalist[i, 2]) *
-            halfedgeactionXiZ(xilist[i + 1],zlist[i + 1],glist[i + 1],κlist[i + 1],metalist[i + 1, 1]; signzz=metalist[i + 1, 2])
+            res *= halfedgeactionXiZ(xilist[i], zlist[zim1], glist[i], κlist[i], metalist[i,1];
+                                     signzz=metalist[i,2]) *
+                   halfedgeactionXiZ(xilist[i+1], zlist[i+1], glist[i+1], κlist[i+1], metalist[i+1,1];
+                                     signzz=metalist[i+1,2])
         end
     end
 
     return res
 end
 
-function bulkfaceactionsZZ(xilist, zlist, glist, κlist, metalist, sgndetlist; γ::Py = γsym())
-    res  = Py(0)
-    I0   = firstindex(glist)
+function bulkfaceactionsZZ(xilist, zlist, glist, κlist, metalist, sgndetlist; γ=γsym())
+    res = symzero(xilist[1][1])
+    I0 = firstindex(glist)
     Iend = lastindex(glist)
 
     for i in I0:2:Iend
@@ -298,14 +289,14 @@ function bulkfaceactionsZZ(xilist, zlist, glist, κlist, metalist, sgndetlist; �
 
         if sgndetlist[i] == 1
             res += edgebulkactionssZZ2((zlist[zim1], zlist[i+1]),
-                                      (glist[i], glist[i+1]),
-                                      (κlist[i], κlist[i+1]);
-                                      γ = γ)
+                                       (glist[i], glist[i+1]),
+                                       (κlist[i], κlist[i+1]);
+                                       γ=γ)
         else
             res += halfedgeactionZZ(xilist[i], zlist[zim1], glist[i], κlist[i], metalist[i,1];
-                                    signzz = metalist[i,2], γ = γ) +
+                                    signzz=metalist[i,2], γ=γ) +
                    halfedgeactionZZ(xilist[i+1], zlist[i+1], glist[i+1], κlist[i+1], metalist[i+1,1];
-                                    signzz = metalist[i+1,2], γ = γ)
+                                    signzz=metalist[i+1,2], γ=γ)
         end
     end
 
@@ -320,41 +311,28 @@ end
 end
 
 function ActionComplex(jvariablesall, gvariablesall, zvariablesall, bdyxikappafa,
-                       OrderBDryFaces, OrderBulkFaces,
-                       metaxikappaf,
-                       kappa, sgndet, tetareasign;
-                       γ::Py = γsym())
+                       OrderBDryFaces, OrderBulkFaces, metaxikappaf,
+                       kappa, sgndet, tetareasign; γ=γsym())
+
+    seed = jvariablesall[1][1][2]
+    totalXiZ = symzero(seed)
+    totalZZ  = symzero(seed)
 
     allfaces = vcat(OrderBDryFaces, OrderBulkFaces)
 
-    BDActionsXiZ = Vector{Py}(undef, length(allfaces))
-    BDActionsZZ  = Vector{Py}(undef, length(allfaces))
-    sp = _sympy()
-    safe_log = sp.log
-
-    for (idx, faces) in pairs(allfaces)
-        # faces is a chain: Vector{Vector{Int}} with elements [k,i,j]
-
-        # build lists along the chain
+    for faces in allfaces
         nfaces = length(faces)
 
-        xilist = Vector{Any}(undef, nfaces)
-        zlist  = Vector{Any}(undef, nfaces)
-        κlist  = Vector{Int}(undef, nfaces)
-
-        # metalist[r,1]=meta, metalist[r,2]=signzz
-        metalist  = Matrix{Any}(undef, nfaces, 2)
-
-        # glist/sgndetlist depend on (k,i) only
-        glist     = Vector{Any}(undef, nfaces)
-        sgndetlist = Vector{Int}(undef, nfaces)
+        xilist      = Vector{Any}(undef, nfaces)
+        zlist       = Vector{Any}(undef, nfaces)
+        κlist       = Vector{Int}(undef, nfaces)
+        metalist    = Matrix{Any}(undef, nfaces, 2)
+        glist       = Vector{Any}(undef, nfaces)
+        sgndetlist  = Vector{Int}(undef, nfaces)
 
         for r in 1:nfaces
-            k,i,j = faces[r][1], faces[r][2], faces[r][3]
-
-            # MMA: bdyxikappafa[[k,i,j]][[1]]
+            k, i, j = faces[r]
             xilist[r] = bdyxikappafa[k][i][j]
-
             zlist[r]  = zvariablesall[k][i][j]
             glist[r]  = gvariablesall[k][i]
             κlist[r]  = kappa[k][i][j]
@@ -366,87 +344,61 @@ function ActionComplex(jvariablesall, gvariablesall, zvariablesall, bdyxikappafa
             sgndetlist[r] = sgndet[k][i]
         end
 
-        # per-chain face sign and j-value taken from first face, like MMA
-        k1,i1,j1 = faces[1][1], faces[1][2], faces[1][3]
+        k1, i1, j1 = faces[1]
         areasign = tetareasign[k1][i1][j1]
         jvalue   = jvariablesall[k1][i1][j1]
 
-        is_bdry = DefineAction.chain_in_list(faces, OrderBDryFaces)
+        is_bdry = chain_in_list(faces, OrderBDryFaces)
 
-        # -------------------------
-        # XiZ part: 2*j*log(…)
-        # -------------------------
         XiZprod = if is_bdry
-            DefineAction.faceactionXiZ(xilist, zlist, glist, κlist, metalist, sgndetlist;
-                          facesign = areasign)
+            faceactionXiZ(xilist, zlist, glist, κlist, metalist, sgndetlist; facesign=areasign)
         else
-            if areasign == -1
-                DefineAction.bulkfaceactionttXiZ(xilist, zlist, glist, κlist, metalist)
-            else
-                DefineAction.bulkfaceactionsXiZ(xilist, zlist, glist, κlist, metalist, sgndetlist)
-            end
+            areasign == -1 ?
+                bulkfaceactionttXiZ(xilist, zlist, glist, κlist, metalist) :
+                bulkfaceactionsXiZ(xilist, zlist, glist, κlist, metalist, sgndetlist)
         end
 
-        BDActionsXiZ[idx] = 2 * jvalue * safe_log(XiZprod)
-
-        # -------------------------
-        # ZZ part: j * (…)
-        # -------------------------
         ZZsum = if is_bdry
-            faceactionBDZZ(xilist, zlist, glist, κlist, metalist, sgndetlist;
-                           facesign = areasign, γ = γ)
+            faceactionBDZZ(xilist, zlist, glist, κlist, metalist, sgndetlist; facesign=areasign, γ=γ)
         else
-            if areasign == -1
-                bulkfaceactionttZZ(xilist, zlist, glist, κlist, metalist; γ = γ)
-            else
-                bulkfaceactionsZZ(xilist, zlist, glist, κlist, metalist, sgndetlist; γ = γ)
-            end
+            areasign == -1 ?
+                bulkfaceactionttZZ(xilist, zlist, glist, κlist, metalist; γ=γ) :
+                bulkfaceactionsZZ(xilist, zlist, glist, κlist, metalist, sgndetlist; γ=γ)
         end
 
-        BDActionsZZ[idx] = jvalue * ZZsum
-    end
-
-    totalXiZ = Py(0)
-    totalZZ  = Py(0)
-
-    for i in eachindex(BDActionsXiZ)
-        totalXiZ += BDActionsXiZ[i]
-        totalZZ  += BDActionsZZ[i]
+        totalXiZ += 2 * jvalue * slog(XiZprod)
+        totalZZ  += jvalue * ZZsum
     end
 
     return totalXiZ + totalZZ
 end
 
 
-function build_metaxikappaf(sgndet, tetareasign, tetn0signtest3)
-    ns   = length(sgndet)
+function build_metaxikappaf(sgndet, tetareasign, tetn0sign)
+    ns = length(sgndet)
     ntet = 5
 
-    sp = _sympy()
-    Id2  = sp.eye(2)
-    σ3py = sp.Matrix(σ3(Int))
+    Id2 = ComplexF64[1 0; 0 1]
+    σ3mat = ComplexF64.(σ3(Int))
 
-    # metaxikappaf[k][i][j] = (meta, signzz)
-    metaxikappaf = Vector{Vector{Vector{Tuple{Py,Int}}}}(undef, ns)
+    metaxikappaf = Vector{Vector{Vector{Tuple{Matrix{ComplexF64},Int}}}}(undef, ns)
 
     for k in 1:ns
-        metaxikappaf[k] = Vector{Vector{Tuple{Py,Int}}}(undef, ntet)
+        metaxikappaf[k] = Vector{Vector{Tuple{Matrix{ComplexF64},Int}}}(undef, ntet)
 
         for i in 1:ntet
-            metaxikappaf[k][i] = Vector{Tuple{Py,Int}}(undef, ntet)
+            metaxikappaf[k][i] = Vector{Tuple{Matrix{ComplexF64},Int}}(undef, ntet)
 
             if sgndet[k][i] > 0
-                # spacelike tetra: always (Id, +1)
                 for j in 1:ntet
                     metaxikappaf[k][i][j] = (Id2, 1)
                 end
             else
-                # timelike tetra
                 for j in 1:ntet
                     if tetareasign[k][i][j] < 0
-                        metaxikappaf[k][i][j] = (σ3py, 1)
+                        metaxikappaf[k][i][j] = (σ3mat, 1)
                     else
-                        metaxikappaf[k][i][j] = (σ3py, tetn0signtest3[k][i][j])
+                        metaxikappaf[k][i][j] = (σ3mat, tetn0sign[k][i][j])
                     end
                 end
             end
@@ -459,72 +411,57 @@ end
 # ============================================================
 # Half-edge action (spacelike face)
 # ============================================================
-function halfedgeaction(xi::Py, z::Py, g::Py, κ::Int, meta::Py; signzz::Int=1, γ::Py = γsym())
-    gt   = g.T
-    detm = meta.det()
-    sp = _sympy()
-    safe_log = sp.log
+function halfedgeaction(xi, z, g, κ::Int, meta; signzz::Int=1, γ=γsym())
+    detm = meta_det(meta)
 
-    A = (signzz * (xi.conjugate().T * meta * gt * z))[0]
-    B = (signzz * ((gt * z).conjugate().T * meta * xi))[0]
-    C = (signzz * ((gt * z).conjugate().T * meta * gt * z))[0]
+    A = scalar_A(xi, z, g, meta; signzz=signzz)
+    B = scalar_B(xi, z, g, meta; signzz=signzz)
+    C = scalar_C(z, g, meta; signzz=signzz)
 
-    term1 = 2 * safe_log(A^((κ + detm)/2) * B^((-κ + detm)/2))
-    term2 = (sp.I * γ * κ - detm) * safe_log(C)
+    term1 = 2 * slog(A^((κ + detm) ÷ 2) * B^((-κ + detm) ÷ 2))
+    term2 = (_I[] * γ * κ - detm) * slog(C)
 
     return term1 + term2
 end
 
-# ============================================================
-# Half-edge action (timelike face)
-# ============================================================
-function halfedgeactiont(xi::Py, z::Py, g::Py, κ::Int, meta::Py; signzz::Int=1, γ::Py = γsym())
-    gt = g.T
-    sp = _sympy()
-    safe_log = sp.log
-    safe_sqrt = sp.sqrt
+function halfedgeactiont(xi, z, g, κ::Int, meta; signzz::Int=1, γ=γsym())
+    A = scalar_A(xi, z, g, meta; signzz=1)
+    B = scalar_B(xi, z, g, meta; signzz=1)
 
-    A = (xi.conjugate().T * meta * gt * z)[0]
-    B = ((gt * z).conjugate().T * meta * xi)[0]
-
-    term1 = 2 * κ * safe_log(safe_sqrt((signzz * A) / (signzz * B)))
-    term2 = -(sp.I / γ) * κ * safe_log(A * B)
+    term1 = 2 * κ * slog(ssqrt((signzz * A) / (signzz * B)))
+    term2 = -(_I[] / γ) * κ * slog(A * B)
 
     return term1 + term2
 end
+
+
 # ============================================================
 # Vertex action (single 4-simplex)
 # ============================================================
-function vertexaction(j_mat1, xi_mat1, z_mat1, g_mat1,
-                            κdata, sgndet, tetn0sign, tetareasign; γ::Py = γsym())
-
+function vertexaction(j_mat1, xi_mat1, z_mat1, g_mat1, κdata, sgndet, tetn0sign, tetareasign; γ=γsym())
     ntet = 5
-    sp = _sympy()
-    Id2  = sp.eye(2)
-    σ3py = sp.Matrix(σ3(Int))
 
-    # terms = Vector{Tuple{Int,Int,Py}}()  # (i, j, jf*he)
-    act   = Py(0)
+    Id2 = ComplexF64[1 0; 0 1]
+    σ3mat = ComplexF64.(σ3(Int))
+
+    seed = j_mat1[1][2]
+    act = symzero(seed)
 
     for i in 1:ntet, j in 1:ntet
         i == j && continue
 
         jf = j_mat1[i][j]
-        jf === Py(0) && continue
 
         κ = κdata[i][j]
         z = (κ == 1) ? z_mat1[i][j] : z_mat1[j][i]
 
         signzz_s = (tetn0sign[i][j] < 0) ? tetn0sign[i][j] : 1
-        meta     = (sgndet[i] == 1 ? Id2 : σ3py)
+        meta = (sgndet[i] == 1 ? Id2 : σ3mat)
 
-        he = (tetareasign[i][j] > 0) ?
-            halfedgeaction( xi_mat1[i][j], z, g_mat1[i], κ, meta;
-                            signzz=signzz_s, γ=γ) :
-            halfedgeactiont(xi_mat1[i][j], z, g_mat1[i], κ, σ3py;
-                            signzz=1, γ=γ)
+        he = tetareasign[i][j] > 0 ?
+            halfedgeaction(xi_mat1[i][j], z, g_mat1[i], κ, meta; signzz=signzz_s, γ=γ) :
+            halfedgeactiont(xi_mat1[i][j], z, g_mat1[i], κ, σ3mat; signzz=1, γ=γ)
 
-        # push!(terms, (i, j, jf * he))
         act += jf * he
     end
 
@@ -537,9 +474,9 @@ function compute_action(geom)
     ns = length(geom.simplex)
 
     xi_mat = geom.varias[:xi_mat]
-    z_mat = geom.varias[:z_mat]
-    g_mat = geom.varias[:g_mat]
-    j_mat = geom.varias[:j_mat]
+    z_mat  = geom.varias[:z_mat]
+    g_mat  = geom.varias[:g_mat]
+    j_mat  = geom.varias[:j_mat]
 
     kappa = [geom.simplex[i].kappa for i in 1:ns]
     sgndet = [geom.simplex[i].sgndet for i in 1:ns]

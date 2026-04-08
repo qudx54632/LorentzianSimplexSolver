@@ -92,7 +92,7 @@ LorentzianSimplexSolver/
 │   │   ├── EOMsHessian.jl
 │   │   ├── ReggeAction.jl
 │   │   ├── SolveVars.jl
-│   │   └── SymbolicToJulia.jl
+│   │   └── ActionEvaluation.jl
 │   ├── algebra/
 │   │   ├── LorentzGroup.jl
 │   │   ├── SpinAlgebra.jl

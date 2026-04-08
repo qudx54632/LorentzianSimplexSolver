@@ -1,7 +1,6 @@
 module ReggeAction
 
-using Symbolics
-using ..SymbolicToJulia: sympy_to_expr
+using SymEngine
 using ..Dihedral: theta_ab
 
 export run_Regge_action
@@ -21,7 +20,7 @@ end
 # ------------------------------------------------------------
 function regge_simplex(area_mat, jlabel_mat, tetareasign_mat, N_mat, γ)
     S_num = 0
-    S_symbol = 0
+    S_symbol = Basic(0)
     for i in 1:4
         for j in (i+1):5
            regge_face_num, regge_face_symbol = regge_face(tetareasign_mat[i][j], area_mat[i][j], jlabel_mat[i][j], N_mat[i], N_mat[j], γ)
@@ -40,20 +39,13 @@ function run_Regge_action(geom, γ)
 
     area_all = [geom.simplex[k].areas for k in 1:ns]
 
-    j_all = [
-        [
-            [Symbolics.variable(sympy_to_expr(j))
-             for j in row]
-            for row in geom.varias[:j_mat][k]
-        ]
-        for k in 1:ns
-    ]
+    j_all = geom.varias[:j_mat]
 
     tetareasign_all = [geom.simplex[k].tetareasign for k in 1:ns]
     N_all = [geom.simplex[k].tetnormalvec for k in 1:ns]
 
     S_num = 0
-    S_symbol = 0
+    S_symbol = Basic(0)
     for k in 1:ns
         regge_simplex_num, regge_simplex_symbol = regge_simplex(area_all[k], j_all[k], tetareasign_all[k], N_all[k], γ)
         S_num += regge_simplex_num

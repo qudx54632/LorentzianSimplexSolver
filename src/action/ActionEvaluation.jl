@@ -1,0 +1,69 @@
+module ActionEvaluation
+
+using SymEngine
+using DoubleFloats
+
+export build_value_dict, eval_symbolic
+
+@inline symname(x::Basic) = string(x)
+
+# ------------------------------------------------------------
+# Safe conversion to SymEngine.Basic
+# ------------------------------------------------------------
+@inline val_basic(x) = x isa Double64 ? Basic(Float64(x)) : Basic(x)
+
+function build_value_dict(sd, γsym::Basic; γval=nothing)
+    d = Dict{Basic,Basic}()
+
+    for i in eachindex(sd.labels_vars)
+        sym = sd.labels_vars[i]
+        val = sd.flags_vars[i] ?
+            (γval === nothing ?
+                val_basic(sd.values_vars[i]) / γsym :
+                val_basic(sd.values_vars[i]) / val_basic(γval)) :
+            val_basic(sd.values_vars[i])
+
+        d[sym] = val
+    end
+
+    for i in eachindex(sd.labels_bdry)
+        sym = sd.labels_bdry[i]
+        val = sd.flags_bdry[i] ?
+            (γval === nothing ?
+                val_basic(sd.values_bdry[i]) / γsym :
+                val_basic(sd.values_bdry[i]) / val_basic(γval)) :
+            val_basic(sd.values_bdry[i])
+
+        d[sym] = val
+    end
+
+    for i in eachindex(sd.labels_j)
+        sym = sd.labels_j[i]
+        val = sd.flags_j[i] ?
+            (γval === nothing ?
+                val_basic(sd.values_j[i]) / γsym :
+                val_basic(sd.values_j[i]) / val_basic(γval)) :
+            val_basic(sd.values_j[i])
+
+        d[sym] = val
+    end
+
+    d[γsym] = γval === nothing ? γsym : val_basic(γval)
+
+    return d
+end
+
+# ------------------------------------------------------------
+# Evaluate symbolic expression
+# ------------------------------------------------------------
+function eval_symbolic(expr::Basic, vals::Dict{Basic,Basic})
+    return subs(expr, vals)
+end
+
+eval_symbolic(x::Number, vals) = x
+
+function eval_symbolic(A::AbstractArray, vals)
+    return map(x -> eval_symbolic(x, vals), A)
+end
+
+end

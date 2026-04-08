@@ -1,40 +1,26 @@
 module SolveVars
 
 using ..CriticalPoints: compute_bdy_critical_data
-using ..DefineSymbols: find_position_in_chain,
-                       collect_bdry_symbols,
-                       collect_varias_symbols
+using ..DefineSymbols: collect_bdry_symbols, collect_varias_symbols
 using ..DefineAction: γsym
-using PythonCall: Py, pyimport, pystr, pyconvert
 
-# sympy = pyimport("sympy")
+using SymEngine
 
 export run_solver, SolveData
-
-const _sympy_ref = Ref{Union{Py,Nothing}}(nothing)
-
-@inline function _sympy()
-    s = _sympy_ref[]
-    if s === nothing
-        s = pyimport("sympy")
-        _sympy_ref[] = s
-    end
-    return s
-end
 
 # ============================================================
 # Container for solver output (Julia-only values)
 # ============================================================
 struct SolveData{T<:Real}
-    labels_vars :: Vector{Py}
+    labels_vars :: Vector{Basic}
     values_vars :: Vector{T}
-    flags_vars  :: BitVector   # true => divide by γ
+    flags_vars  :: BitVector
 
-    labels_bdry :: Vector{Py}
+    labels_bdry :: Vector{Basic}
     values_bdry :: Vector{T}
     flags_bdry  :: BitVector
 
-    labels_j    :: Vector{Py}
+    labels_j    :: Vector{Basic}
     values_j    :: Vector{T}
     flags_j     :: BitVector
 end
@@ -42,26 +28,48 @@ end
 # ============================================================
 # Helper: extract unique symbol from a SymPy expr
 # ============================================================
-@inline function get_sym(expr::Py)
-    syms = collect(expr.free_symbols)
-    isempty(syms) && error("No free symbols")
-    return syms[1]   # ← SAFE
+@inline symkey(x::Basic) = string(x)
+
+function vars_in_expr(expr)
+    if isa(expr, Basic)
+        return sort(collect(free_symbols(expr)), by=string)
+    elseif isa(expr, AbstractArray)
+        vars = Basic[]
+        for e in expr
+            isa(e, Basic) || continue
+            append!(vars, free_symbols(e))
+        end
+        return sort(unique(vars), by=string)
+    else
+        return Basic[]
+    end
 end
 
-# ============================================================
-# Helper: stable key for membership tests (avoid String(::Py) issues)
-# ============================================================
-@inline function symkey(x::Py)::String
-    return pyconvert(String, pystr(x))
+function get_sym(expr)
+    syms = vars_in_expr(expr)
+
+    if isempty(syms)
+        error("No free symbols in $expr")
+    elseif length(syms) == 1
+        return first(syms)
+    else
+        error("Expected one symbol, got $(syms) in $expr")
+    end
+end
+
+function get_single_var(expr)
+    vars = vars_in_expr(expr)
+    length(vars) == 1 || error("Expected 1 variable in $expr, got $vars")
+    return vars[1]
 end
 
 # ============================================================
 # Helper: distribute labels/values/flags into vars or bdry
 # ============================================================
-function distribute!(labels_vars::Vector{Py}, values_vars::Vector{T}, flags_vars::BitVector,
-                     labels_bdry::Vector{Py}, values_bdry::Vector{T}, flags_bdry::BitVector,
+function distribute!(labels_vars::Vector{Basic}, values_vars::Vector{T}, flags_vars::BitVector,
+                     labels_bdry::Vector{Basic}, values_bdry::Vector{T}, flags_bdry::BitVector,
                      seen_vars::Set{String}, seen_bdry::Set{String},
-                     L::Vector{Py}, V::Vector{T}, F::BitVector,
+                     L::Vector{Basic}, V::Vector{T}, F::BitVector,
                      bdry_keys::Set{String}, var_keys::Set{String}) where {T<:Real}
 
     @assert length(L) == length(V) == length(F)
@@ -99,96 +107,107 @@ end
 # ============================================================
 # g variables
 # ============================================================
-function solve_g_var(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
-    sp = _sympy()
-    re, im = sp.re, sp.im
-    labels = Py[]; values = T[]; flags = BitVector()
+function solve_g_var(g_sym::AbstractMatrix{<:Basic}, g_num::AbstractMatrix{Complex{T}}) where {T<:Real}
+    labels = Basic[]
+    values = T[]
+    flags  = BitVector()
 
-    push!(labels, get_sym(re(g_sym[0,0] - 1))); push!(values, real(g_num[1,1]) - one(T)); push!(flags, false)
-    push!(labels, get_sym(im(g_sym[0,0] - 1))); push!(values, imag(g_num[1,1]));          push!(flags, false)
+    vars = vars_in_expr(g_sym[1,1] - 1)
+    @assert length(vars) == 2
+    push!(labels, vars[1]); push!(values, real(g_num[1,1]) - one(T)); push!(flags, false)
+    push!(labels, vars[2]); push!(values, imag(g_num[1,1]));          push!(flags, false)
 
-    push!(labels, get_sym(re(g_sym[0,1])));     push!(values, real(g_num[1,2]));          push!(flags, false)
-    push!(labels, get_sym(im(g_sym[0,1])));     push!(values, imag(g_num[1,2]));          push!(flags, false)
+    vars = vars_in_expr(g_sym[1,2])
+    @assert length(vars) == 2
+    push!(labels, vars[1]); push!(values, real(g_num[1,2]));          push!(flags, false)
+    push!(labels, vars[2]); push!(values, imag(g_num[1,2]));          push!(flags, false)
 
-    push!(labels, get_sym(re(g_sym[1,0])));     push!(values, real(g_num[2,1]));          push!(flags, false)
-    push!(labels, get_sym(im(g_sym[1,0])));     push!(values, imag(g_num[2,1]));          push!(flags, false)
+    vars = vars_in_expr(g_sym[2,1])
+    @assert length(vars) == 2
+    push!(labels, vars[1]); push!(values, real(g_num[2,1]));          push!(flags, false)
+    push!(labels, vars[2]); push!(values, imag(g_num[2,1]));          push!(flags, false)
 
     return labels, values, flags
 end
 
-function solve_g_gauge(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
-    sp = _sympy()
-    re, im = sp.re, sp.im
-
-    labels = Py[]
+function solve_g_gauge(g_sym::AbstractMatrix{<:Basic}, g_num::AbstractMatrix{Complex{T}}) where {T<:Real}
+    
+    labels = Basic[]
     values = T[]
     flags  = BitVector()
 
     # (1,1)
-    push!(labels, get_sym(re(g_sym[0,0])))
-    push!(values, real(g_num[1,1]))
-    push!(flags, false)
-
-    push!(labels, get_sym(im(g_sym[0,0])))
-    push!(values, imag(g_num[1,1]))
-    push!(flags, false)
+    vars = vars_in_expr(g_sym[1,1])
+    @assert length(vars) == 2
+    push!(labels, vars[1]); push!(values, real(g_num[1,1])); push!(flags, false)
+    push!(labels, vars[2]); push!(values, imag(g_num[1,1])); push!(flags, false)
 
     # (1,2)
-    push!(labels, get_sym(re(g_sym[0,1])))
-    push!(values, real(g_num[1,2]))
-    push!(flags, false)
-
-    push!(labels, get_sym(im(g_sym[0,1])))
-    push!(values, imag(g_num[1,2]))
-    push!(flags, false)
+    vars = vars_in_expr(g_sym[1,2])
+    @assert length(vars) == 2
+    push!(labels, vars[1]); push!(values, real(g_num[1,2])); push!(flags, false)
+    push!(labels, vars[2]); push!(values, imag(g_num[1,2])); push!(flags, false)
 
     # (2,1)
-    push!(labels, get_sym(re(g_sym[1,0])))
-    push!(values, real(g_num[2,1]))
-    push!(flags, false)
-
-    push!(labels, get_sym(im(g_sym[1,0])))
-    push!(values, imag(g_num[2,1]))
-    push!(flags, false)
+    vars = vars_in_expr(g_sym[2,1])
+    @assert length(vars) == 2
+    push!(labels, vars[1]); push!(values, real(g_num[2,1])); push!(flags, false)
+    push!(labels, vars[2]); push!(values, imag(g_num[2,1])); push!(flags, false)
 
     # (2,2)
-    push!(labels, get_sym(re(g_sym[1,1])))
-    push!(values, real(g_num[2,2]))
-    push!(flags, false)
-
-    push!(labels, get_sym(im(g_sym[1,1])))
-    push!(values, imag(g_num[2,2]))
-    push!(flags, false)
+    vars = vars_in_expr(g_sym[2,2])
+    @assert length(vars) == 2
+    push!(labels, vars[1]); push!(values, real(g_num[2,2])); push!(flags, false)
+    push!(labels, vars[2]); push!(values, imag(g_num[2,2])); push!(flags, false)
 
     return labels, values, flags
 end
 
-function solve_g_special(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
-    sp = _sympy()
-    re, im = sp.re, sp.im
-    labels = Py[]; values = T[]; flags = BitVector()
+function solve_g_special(g_sym::AbstractMatrix{<:Basic}, g_num::AbstractMatrix{Complex{T}}) where {T<:Real}
 
-    push!(labels, get_sym(re(g_sym[0,0] - 1))); push!(values, real(g_num[1,1]) - one(T)); push!(flags, false)
-    push!(labels, get_sym(im(g_sym[0,0] - 1))); push!(values, imag(g_num[1,1]));          push!(flags, false)
+    labels = Basic[]
+    values = T[]
+    flags  = BitVector()
 
-    push!(labels, get_sym(re(g_sym[1,0])));     push!(values, real(g_num[2,1]));          push!(flags, false)
-    push!(labels, get_sym(im(g_sym[1,0])));     push!(values, imag(g_num[2,1]));          push!(flags, false)
+    # (1,1) → subtract 1
+    vars = vars_in_expr(g_sym[1,1] - 1)
+    @assert length(vars) == 2
+    push!(labels, vars[1]); push!(values, real(g_num[1,1]) - one(T)); push!(flags, false)
+    push!(labels, vars[2]); push!(values, imag(g_num[1,1]));          push!(flags, false)
 
-    push!(labels, get_sym(re(g_sym[1,1])));     push!(values, real(g_num[2,2]));          push!(flags, false)
-    push!(labels, get_sym(im(g_sym[1,1])));     push!(values, imag(g_num[2,2]));          push!(flags, false)
+    # (2,1)
+    vars = vars_in_expr(g_sym[2,1])
+    @assert length(vars) == 2
+    push!(labels, vars[1]); push!(values, real(g_num[2,1])); push!(flags, false)
+    push!(labels, vars[2]); push!(values, imag(g_num[2,1])); push!(flags, false)
+
+    # (2,2)
+    vars = vars_in_expr(g_sym[2,2])
+    @assert length(vars) == 2
+    push!(labels, vars[1]); push!(values, real(g_num[2,2])); push!(flags, false)
+    push!(labels, vars[2]); push!(values, imag(g_num[2,2])); push!(flags, false)
 
     return labels, values, flags
 end
 
-function solve_g_upper(g_sym::Py, g_num::Matrix{Complex{T}}) where {T<:Real}
-    sp = _sympy()
-    re, im = sp.re, sp.im
-    labels = Py[]; values = T[]; flags = BitVector()
+function solve_g_upper(g_sym::AbstractMatrix{<:Basic}, g_num::AbstractMatrix{Complex{T}}) where {T<:Real}
 
-    push!(labels, get_sym(re(g_sym[0,0] - 1))); push!(values, real(g_num[1,1]) - one(T)); push!(flags, false)
+    labels = Basic[]
+    values = T[]
+    flags  = BitVector()
 
-    push!(labels, get_sym(re(g_sym[1,0])));     push!(values, real(g_num[2,1]));          push!(flags, false)
-    push!(labels, get_sym(im(g_sym[1,0])));     push!(values, imag(g_num[2,1]));          push!(flags, false)
+    # (1,1) → subtract 1 (only ONE real variable here)
+    vars = vars_in_expr(g_sym[1,1] - 1)
+    @assert length(vars) == 1
+    push!(labels, vars[1])
+    push!(values, real(g_num[1,1]) - one(T))
+    push!(flags, false)
+
+    # (2,1) → complex (two variables)
+    vars = vars_in_expr(g_sym[2,1])
+    @assert length(vars) == 2
+    push!(labels, vars[1]); push!(values, real(g_num[2,1])); push!(flags, false)
+    push!(labels, vars[2]); push!(values, imag(g_num[2,1])); push!(flags, false)
 
     return labels, values, flags
 end
@@ -196,65 +215,96 @@ end
 # ============================================================
 # z variables
 # ============================================================
-function solve_z_var(z_sym::Py, z_num::Vector{Complex{T}}) where {T<:Real}
-    sp = _sympy()
-    re, im = sp.re, sp.im
-    labels = Py[]; values = T[]; flags = BitVector()
+function solve_z_var(z_sym::Vector{<:Basic}, z_num::Vector{Complex{T}}) where {T<:Real}
+    labels = Basic[]
+    values = T[]
+    flags  = BitVector()
 
-    if !isempty(z_sym[0].free_symbols)
-        expr = z_sym[0]
+    # check first component
+    vars = vars_in_expr(z_sym[1])
+    if !isempty(vars)
+        @assert length(vars) == 2
         zval = z_num[1] - one(T)
-        push!(labels, get_sym(re(expr))); push!(values, real(zval)); push!(flags, false)
-        push!(labels, get_sym(im(expr))); push!(values, imag(zval)); push!(flags, false)
-        return labels, values, flags
-    elseif !isempty(z_sym[1].free_symbols)
-        expr = z_sym[1]
-        zval = z_num[2] - one(T)
-        push!(labels, get_sym(re(expr))); push!(values, real(zval)); push!(flags, false)
-        push!(labels, get_sym(im(expr))); push!(values, imag(zval)); push!(flags, false)
-        return labels, values, flags
-    else
+
+        push!(labels, vars[1]); push!(values, real(zval)); push!(flags, false)
+        push!(labels, vars[2]); push!(values, imag(zval)); push!(flags, false)
+
         return labels, values, flags
     end
+
+    # check second component
+    vars = vars_in_expr(z_sym[2])
+    if !isempty(vars)
+        @assert length(vars) == 2
+        zval = z_num[2] - one(T)
+
+        push!(labels, vars[1]); push!(values, real(zval)); push!(flags, false)
+        push!(labels, vars[2]); push!(values, imag(zval)); push!(flags, false)
+
+        return labels, values, flags
+    end
+
+    return labels, values, flags
 end
 
 # ============================================================
 # j variables
 # ============================================================
-function solve_j_var(j_sym::Py, area::T, tetareasign::Int) where {T<:Real}
-    j_sym === Py(0) && return Py[], T[], falses(0)
-    labels = Py[j_sym]
+function solve_j_var(j_sym::Basic, area::T, tetareasign::Int) where {T<:Real}
+    # skip zero symbol
+    if j_sym == zero(Basic)
+        return Basic[], T[], BitVector()
+    end
+
+    labels = Basic[j_sym]
     values = T[area]
-    flags  = BitVector([tetareasign == 1])  # true => divide by γ
+    flags  = BitVector([tetareasign == 1])
+
     return labels, values, flags
 end
 
 # ============================================================
 # xi variables
 # ============================================================
-function solve_xi_var(xi_sym::Py, xi_sol::Vector{T}) where {T<:Real}
-    isempty(xi_sol) && return Py[], T[], falses(0)
-    sp = _sympy()
-    
-    vars = collect(sp.Matrix(xi_sym).free_symbols)
-    isempty(vars) && return Py[], T[], falses(0)
+function solve_xi_var(xi_sym::Vector{<:Basic}, xi_sol::Vector{T}) where {T<:Real}
+    isempty(xi_sol) && return Basic[], T[], BitVector()
 
-    labels = Py[]; values = T[]; flags = BitVector()
+    # collect unique symbols
+    vars = Basic[]
+    seen = Set{Basic}()
+
+    for e in xi_sym
+        syms = vars_in_expr(e)
+        for v in syms
+            if !(v in seen)
+                push!(seen, v)
+                push!(vars, v)
+            end
+        end
+    end
+
+    isempty(vars) && return Basic[], T[], BitVector()
+
+    labels = Basic[]
+    values = T[]
+    flags  = BitVector()
 
     if length(vars) == 1
-        push!(labels, vars[1]); push!(values, xi_sol[1]); push!(flags, false)
+        push!(labels, vars[1])
+        push!(values, xi_sol[1])
+        push!(flags, false)
+
     elseif length(vars) == 2
         for v in vars
-            name = symkey(v)
-            push!(labels, v)
-            push!(values,
-                  endswith(name, "_a") ? xi_sol[1] :
-                  endswith(name, "_b") ? xi_sol[2] :
-                  error("Unknown xi variable $name"))
-            push!(flags, false)
+            name = string(v)
+            if endswith(name, "a")
+                push!(labels, v); push!(values, xi_sol[1]); push!(flags, false)
+            elseif endswith(name, "b")
+                push!(labels, v); push!(values, xi_sol[2]); push!(flags, false)
+            else
+                error("Unexpected xi symbol name: $name")
+            end
         end
-    else
-        error("Unexpected number of xi symbols")
     end
 
     return labels, values, flags
@@ -273,67 +323,168 @@ function run_solver(geom)
     ns, ntet = length(g_mat), 5
     T = eltype(eltype(eltype(geom.simplex[1].areas)))
 
-    labels_vars = Py[]; values_vars = T[]; flags_vars = BitVector()
-    labels_bdry = Py[]; values_bdry = T[]; flags_bdry = BitVector()
-    labels_j = Py[];    values_j = T[]; flags_j  = BitVector()
+    # -------------------------------
+    # OUTPUT CONTAINERS
+    # -------------------------------
+    labels_vars = Basic[]
+    values_vars = T[]
+    flags_vars  = BitVector()
 
-    # classification sets (string keys)
-    bdry_keys = Set(symkey(s) for s in collect_bdry_symbols(geom))
-    var_keys  = Set(symkey(s) for s in collect_varias_symbols(geom))
+    labels_bdry = Basic[]
+    values_bdry = T[]
+    flags_bdry  = BitVector()
 
-    seen_vars = Set{String}()
-    seen_bdry = Set{String}()
-    seen_j   = Set{String}()
+    labels_j = Basic[]
+    values_j = T[]
+    flags_j  = BitVector()
 
+    # -------------------------------
+    # classification sets (NO string!)
+    # -------------------------------
+    bdry_set = Set(collect_bdry_symbols(geom))
+
+    seen_vars = Set{Basic}()
+    seen_bdry = Set{Basic}()
+    seen_j    = Set{Basic}()
+
+    # -------------------------------
+    # numerical data
+    # -------------------------------
     data = compute_bdy_critical_data(geom)
-    gdataof, zdataf = data.gdataof, data.zdataf
-    areadataf, xisoln = data.areadataf, data.xisoln
+    gdataof   = data.gdataof
+    zdataf    = data.zdataf
+    areadataf = data.areadataf
+    xisoln    = data.xisoln
 
-    gspecialpos = geom.varias[:gspecialPos]
-    GaugeFixUpperTriangle = ns > 1 ? geom.connectivity[1]["GaugeFixUpperTriangle"] :
-                                     Vector{Vector{Int}}()
-    GaugeTet = geom.connectivity[1]["GaugeTet"]
+    # -------------------------------
+    # precompute lookup sets (FAST!)
+    # -------------------------------
+    gspecial_set = Set(Tuple(p) for p in geom.varias[:gspecialPos])
+    gupper_set   = ns > 1 ? Set(Tuple(p) for p in geom.connectivity[1]["GaugeFixUpperTriangle"]) :
+                            Set{Tuple{Int,Int}}()
+    gauge_set = ns > 1 ? Set(Tuple(p) for p in geom.connectivity[1]["GaugeTet"]) : Set([(1,1)])
 
     kappa       = [geom.simplex[a].kappa       for a in 1:ns]
     tetareasign = [geom.simplex[a].tetareasign for a in 1:ns]
 
+    # ============================================================
+    # MAIN LOOP
+    # ============================================================
     for a in 1:ns, i in 1:ntet
-        pos_gspecial = find_position_in_chain([a,i], gspecialpos)
-        pos_gupper   = find_position_in_chain([a,i], GaugeFixUpperTriangle)
-        pos_gauge    = find_position_in_chain([a,i], GaugeTet)
 
-        L,V,F = pos_gauge    !== nothing ? solve_g_gauge(g_mat[a][i], gdataof[a][i]) :
-                pos_gspecial !== nothing ? solve_g_special(g_mat[a][i], gdataof[a][i]) :
-                pos_gupper   !== nothing ? solve_g_upper(g_mat[a][i], gdataof[a][i]) :
-                                           solve_g_var(g_mat[a][i], gdataof[a][i])
+        key_ai = (a,i)
 
-        distribute!(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry, seen_vars, seen_bdry, L, V, F, bdry_keys, var_keys)
+        # -------- g --------
+        L, V, F =
+            key_ai in gauge_set    ? solve_g_gauge(g_mat[a][i], gdataof[a][i]) :
+            key_ai in gspecial_set ? solve_g_special(g_mat[a][i], gdataof[a][i]) :
+            key_ai in gupper_set   ? solve_g_upper(g_mat[a][i], gdataof[a][i]) :
+                                     solve_g_var(g_mat[a][i], gdataof[a][i])
 
+        for k in eachindex(L)
+            sym = L[k]
+
+            if sym in bdry_set
+                sym in seen_bdry && continue
+                push!(seen_bdry, sym)
+                push!(labels_bdry, sym)
+                push!(values_bdry, V[k])
+                push!(flags_bdry,  F[k])
+
+            else
+                sym in seen_vars && continue
+                push!(seen_vars, sym)
+                push!(labels_vars, sym)
+                push!(values_vars, V[k])
+                push!(flags_vars,  F[k])
+            end
+        end
+
+        # -------- faces --------
         for j in 1:ntet
             i == j && continue
 
-            L,V,F = solve_xi_var(xi_mat[a][i][j], xisoln[a][i][j])
-            distribute!(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry, seen_vars, seen_bdry, L, V, F, bdry_keys, var_keys)
-
-            if kappa[a][i][j] == 1
-                L,V,F = solve_z_var(z_mat[a][i][j], zdataf[a][i][j])
-                distribute!(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry, seen_vars, seen_bdry, L, V, F, bdry_keys, var_keys)
-            end
-
-            L,V,F = solve_j_var(j_mat[a][i][j], areadataf[a][i][j], tetareasign[a][i][j])
+            # xi
+            L, V, F = solve_xi_var(xi_mat[a][i][j], xisoln[a][i][j])
             for k in eachindex(L)
-                key = symkey(L[k])
-                key in seen_j && continue
-                push!(seen_j, key)
-                push!(labels_j, L[k])
-                push!(values_j, V[k])
-                push!(flags_j,  F[k])
+                sym = L[k]
+
+                if sym in bdry_set
+                    sym in seen_bdry && continue
+                    push!(seen_bdry, sym)
+                    push!(labels_bdry, sym)
+                    push!(values_bdry, V[k])
+                    push!(flags_bdry,  F[k])
+                else
+                    sym in seen_vars && continue
+                    push!(seen_vars, sym)
+                    push!(labels_vars, sym)
+                    push!(values_vars, V[k])
+                    push!(flags_vars,  F[k])
+                end
             end
-            distribute!(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry, seen_vars, seen_bdry, L, V, F, bdry_keys, var_keys)
+
+            # z
+            if kappa[a][i][j] == 1
+                L, V, F = solve_z_var(z_mat[a][i][j], zdataf[a][i][j])
+                for k in eachindex(L)
+                    sym = L[k]
+
+                    if sym in bdry_set
+                        sym in seen_bdry && continue
+                        push!(seen_bdry, sym)
+                        push!(labels_bdry, sym)
+                        push!(values_bdry, V[k])
+                        push!(flags_bdry,  F[k])
+                    else
+                        sym in seen_vars && continue
+                        push!(seen_vars, sym)
+                        push!(labels_vars, sym)
+                        push!(values_vars, V[k])
+                        push!(flags_vars,  F[k])
+                    end
+                end
+            end
+
+            # j (separate)
+            L, V, F = solve_j_var(j_mat[a][i][j], areadataf[a][i][j], tetareasign[a][i][j])
+
+            for k in eachindex(L)
+                sym = L[k]
+                if !(sym in seen_j)
+                    push!(seen_j, sym)
+                    push!(labels_j, sym)
+                    push!(values_j, V[k])
+                    push!(flags_j,  F[k])
+                end
+
+                # -------------------------
+                # ALSO add to vars (NEW)
+                # -------------------------
+                if sym in bdry_set
+                    if !(sym in seen_bdry)
+                        push!(seen_bdry, sym)
+                        push!(labels_bdry, sym)
+                        push!(values_bdry, V[k])
+                        push!(flags_bdry,  F[k])
+                    end
+                else
+                    if !(sym in seen_vars)
+                        push!(seen_vars, sym)
+                        push!(labels_vars, sym)
+                        push!(values_vars, V[k])
+                        push!(flags_vars,  F[k])
+                    end
+                end
+            end
         end
     end
 
-    return SolveData(labels_vars, values_vars, flags_vars, labels_bdry, values_bdry, flags_bdry, labels_j, values_j, flags_j), γsym
+    return SolveData(
+        labels_vars, values_vars, flags_vars,
+        labels_bdry, values_bdry, flags_bdry,
+        labels_j,    values_j,    flags_j
+    ), γsym()
 end
 
 end # module
