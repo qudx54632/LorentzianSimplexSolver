@@ -392,20 +392,22 @@ function build_j_variables(
     # --------------------------------------------------
     bulk_dict = Dict{Tuple{Int,Int,Int}, Tuple{Int,Int,Int}}()
     for chain in OrderBulkFaces
+        rep = Tuple(chain[1])
         for v in chain
-            bulk_dict[(v[1], v[2], v[3])] = (chain[1][1], chain[1][2], chain[1][3])
+            bulk_dict[Tuple(v)] = rep
         end
     end
 
     bdry_dict = Dict{Tuple{Int,Int,Int}, Tuple{Int,Int,Int}}()
     for chain in OrderBDryFaces
+        rep = Tuple(chain[1])
         for v in chain
-            bdry_dict[(v[1], v[2], v[3])] = (chain[1][1], chain[1][2], chain[1][3])
+            bdry_dict[Tuple(v)] = rep
         end
     end
 
     # --------------------------------------------------
-    # Symbol cache (VERY important)
+    # Symbol cache
     # --------------------------------------------------
     symbol_cache = Dict{Tuple{Int,Int,Int}, Basic}()
 
@@ -421,18 +423,29 @@ function build_j_variables(
     end
 
     # --------------------------------------------------
-    # Allocate outputs
+    # Build ordered bulk j_var directly from OrderBulkFaces
+    # --------------------------------------------------
+    j_var = Basic[]
+    for chain in OrderBulkFaces
+        a,b,c = chain[1]
+        push!(j_var, get_symbol(a,b,c))
+    end
+
+    # --------------------------------------------------
+    # Boundary j's still collected as set
+    # --------------------------------------------------
+    j_bdry_set = Set{Basic}()
+
+    # --------------------------------------------------
+    # Allocate j_mat
     # --------------------------------------------------
     j_mat = [ [ Vector{Basic}(undef, ntet) for _ in 1:ntet ]
               for _ in 1:num_vertex ]
 
-    j_var  = Set{Basic}()
-    j_bdry = Set{Basic}()
-
     z0 = zero(Basic)
 
     # --------------------------------------------------
-    # Main loop
+    # Fill j_mat
     # --------------------------------------------------
     for k in 1:num_vertex
         for i in 1:ntet
@@ -443,14 +456,11 @@ function build_j_variables(
                     continue
                 end
 
-                key = (k, i, j)
+                key = (k,i,j)
 
                 if haskey(bulk_dict, key)
                     a,b,c = bulk_dict[key]
-                    jsym = get_symbol(a,b,c)
-
-                    j_mat[k][i][j] = jsym
-                    push!(j_var, jsym)
+                    j_mat[k][i][j] = get_symbol(a,b,c)
 
                 else
                     @assert haskey(bdry_dict, key)
@@ -459,15 +469,15 @@ function build_j_variables(
                     jsym = get_symbol(a,b,c)
 
                     j_mat[k][i][j] = jsym
-                    push!(j_bdry, jsym)
+                    push!(j_bdry_set, jsym)
                 end
             end
         end
     end
 
-    return sort!(collect(j_var), by=string),
-           sort!(collect(j_bdry), by=string),
-           j_mat
+    j_bdry = sort!(collect(j_bdry_set), by=string)
+
+    return j_var, j_bdry, j_mat
 end
 
 # ------------------------------------------------------------

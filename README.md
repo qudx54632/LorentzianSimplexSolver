@@ -157,7 +157,8 @@ Key dependencies include:
 - Symbolics
 - GenericLinearAlgebra
 - Combinatorics
-- PythonCall (optional, for symbolic backends)
+- SymEngine
+- GenericSchur
 
 All dependencies are declared explicitly in Project.toml.
 
