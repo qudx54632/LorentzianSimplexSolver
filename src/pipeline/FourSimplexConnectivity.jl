@@ -152,65 +152,64 @@ end
 # ------------------------------------------------------------
 # Order bulk faces (Mathematica translation)
 # ------------------------------------------------------------
+using Combinatorics
+
 function orderBulk(FacesPosition, sharedTetsPos, k)
 
-    tempfaces = [fp[1:2] for fp in FacesPosition[k]]
+    faces = FacesPosition[k]
+    tempfaces = [f[1:2] for f in faces]
     uniqfaces = unique(tempfaces)
 
-    subsets2 = [[a,b] for (a,b) in combinations(uniqfaces, 2)]
+    subsets2 = collect(combinations(uniqfaces, 2))
 
-    selectlinks = [pair for pair in subsets2 if pair in sharedTetsPos]
+    selectlinks = [link for link in subsets2 if link in sharedTetsPos]
 
-    isempty(selectlinks) && return FacesPosition[k]
+    isempty(selectlinks) && return faces
 
-    used = falses(length(selectlinks))
-    chain = [selectlinks[1]]
-    used[1] = true
-    current = chain[1][2][1]
+    templist = copy(selectlinks[1])
 
-    nextinds = [
-        i for i in eachindex(selectlinks)
-        if !used[i] && any(x -> x[1] == current, selectlinks[i])
-    ]
+    safetyCounter = 0
 
-    if isempty(nextinds)
-        chain = [[selectlinks[1][2], selectlinks[1][1]]]
-        current = chain[1][2][1]
-    end
+    while length(templist) < length(reduce(vcat, selectlinks)) && safetyCounter < 100
+        safetyCounter += 1
+        prevLen = length(templist)
 
-    while count(!, used) > 0
-        nextinds = [
-            i for i in eachindex(selectlinks)
-            if !used[i] && any(x -> x[1] == current, selectlinks[i])
-        ]
+        current = templist[end][1]
+        pos = Tuple{Int,Int}[]
 
-        isempty(nextinds) && break
-
-        i = first(nextinds)
-
-        if selectlinks[i][1][1] == current
-            push!(chain, selectlinks[i])
-            current = selectlinks[i][2][1]
-        else
-            push!(chain, [selectlinks[i][2], selectlinks[i][1]])
-            current = selectlinks[i][1][1]
+        for i in eachindex(selectlinks)
+            for j in 1:2
+                if selectlinks[i][j][1] == current
+                    push!(pos, (i, j))
+                end
+            end
         end
 
-        used[i] = true
+        for (i, j) in pos
+            endpoint = selectlinks[i][j]
+
+            if endpoint in templist
+                continue
+            end
+
+            push!(templist, endpoint)
+
+            otherj = (j == 1 ? 2 : 1)
+            push!(templist, selectlinks[i][otherj])
+        end
+
+        if length(templist) == prevLen
+            reverse!(templist)
+        end
     end
 
-    templist = reduce(vcat, chain)
-    posnew = [findfirst(x -> x == f, tempfaces) for f in templist]
-    output0 = [FacesPosition[k][i] for i in posnew if i !== nothing]
-
-    if length(output0) == length(FacesPosition[k])
-        return output0
-    else
-        head = [output0[1][1], output0[1][3], output0[1][2]]
-        tail = [output0[end][1], output0[end][3], output0[end][2]]
-        return vcat([head], output0, [tail])
+    posnew = Int[]
+    for f in templist
+        idx = findfirst(x -> x == f, tempfaces)
+        idx === nothing || push!(posnew, idx)
     end
 
+    return [faces[i] for i in posnew]
 end
 
 function order_bulk_faces_all(BulkFacesPos, sharedTetsPos)
@@ -222,15 +221,39 @@ end
 # Order boundary faces around bulk chain
 # ------------------------------------------------------------
 function order_bdry_faces(FacesPosition, sharedTetsPos, k)
+
     faces_k = FacesPosition[k]
 
+    # ------------------------------------------------------------
+    # Case: only two faces
+    # ------------------------------------------------------------
     if length(faces_k) == 2
         return faces_k
     end
 
-    bdfaces = orderBulk(FacesPosition, sharedTetsPos, k)
-  
-    return bdfaces
+    # ------------------------------------------------------------
+    # Step 1: get inner ordered bulk faces
+    # ------------------------------------------------------------
+    innerorder = orderBulk(FacesPosition, sharedTetsPos, k)
+
+    # ------------------------------------------------------------
+    # Step 2: complement = faces not in innerorder
+    # ------------------------------------------------------------
+    comp = [f for f in faces_k if f ∉ innerorder]
+
+    # sanity: expect exactly 2
+    if length(comp) != 2
+        error("Expected exactly 2 boundary faces, got $(length(comp))")
+    end
+
+    # ------------------------------------------------------------
+    # Step 3: decide head/tail placement
+    # ------------------------------------------------------------
+    if comp[1][1] == innerorder[1][1]
+        return vcat([comp[1]], innerorder, [comp[2]])
+    else
+        return vcat([comp[2]], innerorder, [comp[1]])
+    end
 end
 
 function order_bdry_faces_all(BDFacesPos, sharedTetsPos)
@@ -264,7 +287,29 @@ end
 # ------------------------------------------------------------
 # SU(2) gauge-fix selection
 # ------------------------------------------------------------
-function build_gauge_fix_sets(sharedTetsPos, sgndet)
+# function build_gauge_fix_sets(sharedTetsPos, sgndet)
+#     GaugeFixUpperTriangle = Vector{Vector{Int}}()
+#     oppositesl2c          = Vector{Vector{Int}}()
+
+#     for pair in sharedTetsPos
+#         s1, t1 = pair[1][1], pair[1][2]
+#         s2, t2 = pair[2][1], pair[2][2]
+
+#         if sgndet[s1][t1] == 1
+#             push!(GaugeFixUpperTriangle, [s1, t1])
+#             push!(oppositesl2c,          [s2, t2])
+#         end
+#     end
+
+#     return GaugeFixUpperTriangle, oppositesl2c
+# end
+function build_gauge_fix_sets(sharedTetsPos, sgndet; ntet=5)
+
+    ns = length(sgndet)  # number of simplices
+
+    # count how many gauge-fixes per simplex
+    counts = zeros(Int, ns)
+
     GaugeFixUpperTriangle = Vector{Vector{Int}}()
     oppositesl2c          = Vector{Vector{Int}}()
 
@@ -273,8 +318,20 @@ function build_gauge_fix_sets(sharedTetsPos, sgndet)
         s2, t2 = pair[2][1], pair[2][2]
 
         if sgndet[s1][t1] == 1
-            push!(GaugeFixUpperTriangle, [s1, t1])
-            push!(oppositesl2c,          [s2, t2])
+            f1 = [s1, t1]
+            f2 = [s2, t2]
+
+            # prefer fixing f1, but avoid over-constraining simplex s1
+            if counts[s1] < ntet - 1   # i.e. < 4 when ntet=5
+                push!(GaugeFixUpperTriangle, f1)
+                push!(oppositesl2c, f2)
+                counts[s1] += 1
+            else
+                # fallback: fix the other simplex instead
+                push!(GaugeFixUpperTriangle, f2)
+                push!(oppositesl2c, f1)
+                counts[s2] += 1
+            end
         end
     end
 
@@ -369,9 +426,9 @@ function compute_GaugeTet(sharedTetsPos, GaugeFixUpperTriangle, ns; ntet=5)
                     fallback = pos
                 end
             end
+            fallback === nothing && error("No valid fallback for simplex $i")
             GaugeTet[i] = fallback
         else
-            # take first boundary tet (like MMA)
             GaugeTet[i] = BdryTet[i][1]
         end
     end

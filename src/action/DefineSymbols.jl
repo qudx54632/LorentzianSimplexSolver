@@ -463,7 +463,18 @@ function build_j_variables(
                     j_mat[k][i][j] = get_symbol(a,b,c)
 
                 else
-                    @assert haskey(bdry_dict, key)
+                    # @assert haskey(bdry_dict, key)
+                    if !haskey(bdry_dict, key)
+                        println("❌ Missing key detected:")
+                        println("  simplex k = ", k)
+                        println("  tetrahedra pair (i,j) = ", (i,j))
+                        println("  full key = ", key)
+
+                        println("  In bulk_dict? ", haskey(bulk_dict, key))
+                        println("  In bdry_dict? ", haskey(bdry_dict, key))
+
+                        error("Key not found in either bulk_dict or bdry_dict")
+                    end
 
                     a,b,c = bdry_dict[key]
                     jsym = get_symbol(a,b,c)

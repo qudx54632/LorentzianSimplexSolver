@@ -5,12 +5,11 @@ using DoubleFloats
 
 export build_value_dict, eval_symbolic
 
-@inline symname(x::Basic) = string(x)
 
 # ------------------------------------------------------------
 # Safe conversion to SymEngine.Basic
 # ------------------------------------------------------------
-@inline val_basic(x) = x isa Double64 ? Basic(Float64(x)) : Basic(x)
+@inline val_basic(x) = x isa Double64 ? Basic(string(x)) : Basic(x)
 
 function build_value_dict(sd, γsym::Basic; γval=nothing)
     d = Dict{Basic,Basic}()

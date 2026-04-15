@@ -194,7 +194,7 @@ S_ref = LorentzianSimplexSolver.DefineAction.compute_action(geom_ref)
 vals_ref = LorentzianSimplexSolver.ActionEvaluation.build_value_dict(sd_ref, γ; γval=nothing)
 S_ref_sym = LorentzianSimplexSolver.ActionEvaluation.eval_symbolic(S_ref, vals_ref);
 S_ref_vals = SymEngine.expand(S_ref_sym)
-
+println("Action = ", S_ref_vals)
 # ------------------------------------------------------------
 # 8. Check equation motions
 # ------------------------------------------------------------
@@ -212,10 +212,14 @@ end
 println("\nWould you like to compute Hessian? (y/n)")
 if lowercase(strip(readline())) == "y"
     println("\nComputing Hessian matrix (symbolic)...")
-    H_ref = LorentzianSimplexSolver.EOMsHessian.compute_Hessian(S_ref, sd_ref)
+    g_vars = geom_ref.varias[:g_var]
+    z_vars = geom_ref.varias[:z_var]
+    j_vars = geom_ref.varias[:j_var]
+    vars = vcat(g_vars, z_vars, j_vars)
+    H_ref = LorentzianSimplexSolver.EOMsHessian.compute_Hessian_block_half(S_ref, vars)
 
     println("\nEvaluating Hessian matrix...")
-    H_ref_eval, _ = LorentzianSimplexSolver.EOMsHessian.evaluate_hessian(H_ref, sd_ref; γ = 1)
+    H_ref_eval = LorentzianSimplexSolver.EOMsHessian.evaluate_hessian_block(H_ref, sd_ref; γ = 1)
 
     H_ref_det = det(H_ref_eval)
     println("The determinant of Hessian matrix is $H_ref_det.")

@@ -5,7 +5,38 @@ using ..SolveVars: SolveData
 using ..PrecisionUtils: get_tolerance
 using ..ActionEvaluation: build_value_dict, eval_symbolic
 
-export compute_EOMs, compute_Hessian, check_EOMs, evaluate_hessian
+export compute_EOMs,
+       compute_Hessian_block,
+       compute_Hessian_block_half,
+       check_EOMs,
+       evaluate_hessian_block,
+       evaluate_hessian_from_dS,
+       evaluate_hessian_ondemand
+
+# ============================================================
+# helper function to convert SymEngine object to numeric type T
+# ============================================================
+@inline function to_T(x, ::Type{T}) where {T<:Real}
+    # If already a Julia real number
+    if x isa Real
+        return T(x)
+    end
+
+    # Otherwise force string conversion
+    sx = string(x)
+
+    try
+        return parse(T, sx)
+    catch
+        error("Cannot convert to $T: $sx (type = $(typeof(x)))")
+    end
+end
+
+@inline function to_complex_T(val_sym, ::Type{T}) where {T<:Real}
+    re = to_T(real(val_sym), T)
+    im = to_T(imag(val_sym), T)
+    return complex(re, im)
+end
 
 # ============================================================
 # Equations of motion
@@ -23,14 +54,37 @@ end
 # ============================================================
 # Hessian
 # ============================================================
-function compute_Hessian(S::Basic, sd::SolveData)
-    vars = sd.labels_vars
-    H = Dict{Tuple{Basic,Basic},Basic}()
+function compute_Hessian_block(S::Basic, vars)
+    n = length(vars)
+    dS = [SymEngine.diff(S, v) for v in vars]
+    H = Matrix{Basic}(undef, n, n)
 
-    for v1 in vars
-        dS_v1 = SymEngine.diff(S, v1)
-        for v2 in vars
-            H[(v1, v2)] = SymEngine.diff(dS_v1, v2)
+    for i in 1:n
+        H[i, i] = SymEngine.diff(dS[i], vars[i])
+        for j in i+1:n
+            hij = SymEngine.diff(dS[i], vars[j])
+            H[i, j] = hij
+            H[j, i] = hij
+        end
+    end
+
+    return H
+end
+
+# ============================================================
+# Hessian
+# ============================================================
+function compute_Hessian_block_half(S::Basic, vars)
+    n = length(vars)
+    dS = [SymEngine.diff(S, v) for v in vars]
+    H = Matrix{Basic}(undef, n, n)
+
+    for i in 1:n
+        H[i, i] = SymEngine.diff(dS[i], vars[i])
+        for j in i+1:n
+            hij = SymEngine.diff(dS[i], vars[j])
+            H[i, j] = hij
+            H[j, i] = Basic(0)
         end
     end
 
@@ -40,7 +94,7 @@ end
 # ============================================================
 # Evaluate EOMs numerically
 # ============================================================
-function check_EOMs(dS::Dict{Basic,Basic}, sd::SolveData; γ=1)
+function check_EOMs(dS::Dict{Basic,Basic}, sd::SolveData{T}; γ=1) where {T<:Real}
 
     tol = get_tolerance()
     γsym = symbols("gamma")
@@ -53,8 +107,7 @@ function check_EOMs(dS::Dict{Basic,Basic}, sd::SolveData; γ=1)
         val_sym = eval_symbolic(expr, vals)
 
         # convert to numeric
-        val = complex(Float64(N(real(val_sym))),
-                      Float64(N(imag(val_sym))))
+        val = to_complex_T(val_sym, T)
 
         re_val = abs(real(val))
         im_val = abs(imag(val))
@@ -76,38 +129,98 @@ function check_EOMs(dS::Dict{Basic,Basic}, sd::SolveData; γ=1)
 end
 
 # ============================================================
-# Evaluate Hessian numerically
+# Evaluate a precomputed symbolic Hessian block
 # ============================================================
-function evaluate_hessian(Hsym::Dict{Tuple{Basic,Basic},Basic},
-                          sd::SolveData{T};
-                          γ = one(T)) where {T<:Real}
+function evaluate_hessian_block(Hsym::Matrix{Basic},
+                                sd::SolveData{T};
+                                γ = one(T)) where {T<:Real}
 
     γsym = symbols("gamma")
     vals = build_value_dict(sd, γsym; γval=γ)
 
-    labels = sd.labels_vars
-    n = length(labels)
-
-    index = Dict(string(v) => i for (i, v) in enumerate(labels))
-
+    n = size(Hsym, 1)
     H = Matrix{Complex{T}}(undef, n, n)
-    fill!(H, zero(Complex{T}))
 
-    for ((v1, v2), expr) in Hsym
-        i = index[string(v1)]
-        j = index[string(v2)]
-        j < i && continue
+    for j in 1:n
+        for i in 1:j
+            val_sym = eval_symbolic(Hsym[i, j], vals)
 
-        val_sym = eval_symbolic(expr, vals)
+            val = to_complex_T(val_sym, T)
 
-        val = complex(Float64(N(real(val_sym))),
-                      Float64(N(imag(val_sym))))
-
-        H[i, j] = val
-        H[j, i] = val
+            H[i, j] = val
+            H[j, i] = val
+        end
     end
 
-    return H, labels
+    return H
+end
+
+# ============================================================
+# Evaluate Hessian from precomputed first derivatives
+# ============================================================
+function evaluate_hessian_from_dS(
+    dS_precomp::Vector{Basic},
+    vars::Vector{Basic},
+    sd::SolveData{T};
+    γ = one(T)
+) where {T<:Real}
+
+    γsym = symbols("gamma")
+    vals = build_value_dict(sd, γsym; γval=γ)
+
+    n = length(vars)
+    H = Matrix{Complex{T}}(undef, n, n)
+
+    for j in 1:n
+        for i in 1:j
+            hij_sym = SymEngine.diff(dS_precomp[i], vars[j])
+
+            val_sym = eval_symbolic(hij_sym, vals)
+
+            val = to_complex_T(val_sym, T)
+
+            H[i, j] = val
+            H[j, i] = val
+        end
+    end
+
+    return H
+end
+
+# ============================================================
+# No symbolic Hessian storage:
+# differentiate and evaluate on demand
+# ============================================================
+function evaluate_hessian_ondemand(S::Basic,
+                                   vars,
+                                   sd::SolveData{T};
+                                   γ = one(T)) where {T<:Real}
+
+    γsym = symbols("gamma")
+    vals = build_value_dict(sd, γsym; γval=γ)
+
+    n = length(vars)
+    H = Matrix{Complex{T}}(undef, n, n)
+
+    # first derivatives once
+    dS = Vector{Basic}(undef, n)
+    for i in 1:n
+        dS[i] = SymEngine.diff(S, vars[i])
+    end
+
+    for j in 1:n
+        for i in 1:j
+            hij_sym = SymEngine.diff(dS[i], vars[j])
+            val_sym = eval_symbolic(hij_sym, vals)
+
+            val = to_complex_T(val_sym, T)
+
+            H[i, j] = val
+            H[j, i] = val
+        end
+    end
+
+    return H
 end
 
 end # module

@@ -104,11 +104,15 @@ S_ref_vals = SymEngine.expand(S_ref_sym)
 # ------------------------------------------------------------
 # 7. EOMs computation 
 # ------------------------------------------------------------
+g_vars = geom_ref.varias[:g_var]
+z_vars = geom_ref.varias[:z_var]
+j_vars = geom_ref.varias[:j_var]
+vars = vcat(g_vars, z_vars, j_vars)
 dS_sym = LorentzianSimplexSolver.EOMsHessian.compute_EOMs(S_ref, sd_ref)
 dS_vals = LorentzianSimplexSolver.EOMsHessian.check_EOMs(dS_sym, sd_ref; γ=1)
 
 # ------------------------------------------------------------
 # 8. Hessian matrix computation 
 # ------------------------------------------------------------
-Hsym = LorentzianSimplexSolver.EOMsHessian.compute_Hessian(S_ref, sd_ref)
-H_evals, labels = LorentzianSimplexSolver.EOMsHessian.evaluate_hessian(Hsym, sd_ref; γ=1);
+Hsym = LorentzianSimplexSolver.EOMsHessian.compute_Hessian_block_half(S_ref, vars)
+H_evals = LorentzianSimplexSolver.EOMsHessian.evaluate_hessian_block(Hsym, sd_ref; γ=1);
