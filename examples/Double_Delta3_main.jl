@@ -107,7 +107,8 @@ S_ref_vals = SymEngine.expand(S_ref_sym)
 g_vars = geom_ref.varias[:g_var]
 z_vars = geom_ref.varias[:z_var]
 j_vars = geom_ref.varias[:j_var]
-vars = vcat(g_vars, z_vars, j_vars)
+xi_vars = geom_ref.varias[:xi_var]
+vars = vcat(g_vars, z_vars, xi_vars, j_vars)
 dS_sym = LorentzianSimplexSolver.EOMsHessian.compute_EOMs(S_ref, sd_ref)
 dS_vals = LorentzianSimplexSolver.EOMsHessian.check_EOMs(dS_sym, sd_ref; γ=1)
 

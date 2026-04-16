@@ -342,13 +342,14 @@ end
 # Build SU(1,1) gauge-fix triple sets
 # ------------------------------------------------------------
 # helper must exist BEFORE this function
-@inline key2(v::Vector{Int}) = string(v[1], "_", v[2])
+# @inline key2(v::Vector{Int}) = string(v[1], "_", v[2])
+@inline key2(v::Vector{Int}) = (v[1], v[2])
 
 function build_timelike_data(sharedTetsPos, sgndet, tetareasign)
     timelike_pairs = Vector{Vector{Vector{Int}}}()
     gaugespacelike = Vector{Vector{Vector{Int}}}()   # pair-level
     gaugetimelike  = Vector{Vector{Vector{Int}}}()   # pair-level
-    lookup         = Dict{String,Int}()
+    lookup = Dict{Tuple{Int,Int}, Int}()
 
     for pair in sharedTetsPos
         p1 = pair[1]   # [s1,t1]

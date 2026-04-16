@@ -134,11 +134,29 @@ function build_Uinverse(ns::Int, ntet::Int, lookup, gaugespacelike, su)
 
     Uinverse = [[I2 for _ in 1:ntet] for _ in 1:ns]
 
+    # for k in 1:ns, i in 1:ntet
+    #     key = (k, i)
+    #     if haskey(lookup, key)
+    #         p = lookup[key]
+    #         s, t, j_sp = gaugespacelike[p][1]
+    #         Uinverse[k][i] = inv(su[s][t][j_sp])
+    #     end
+    # end
     for k in 1:ns, i in 1:ntet
         key = (k, i)
+
         if haskey(lookup, key)
             p = lookup[key]
-            s, t, j_sp = gaugespacelike[p][1]
+
+            side1 = gaugespacelike[p][1]
+            side2 = gaugespacelike[p][2]
+
+            if key == (side1[1], side1[2])
+                s, t, j_sp = side1
+            else
+                s, t, j_sp = side2
+            end
+
             Uinverse[k][i] = inv(su[s][t][j_sp])
         end
     end
@@ -192,7 +210,7 @@ function build_U2(ns::Int, ntet::Int, lookup, gaugetimelike, xi)
     tol = T(get_tolerance())  # not strictly needed here, but consistent
 
     for k in 1:ns, i in 1:ntet
-        key = string(k, "_", i)
+        key = (k, i)
         haskey(lookup, key) || continue
 
         pos = lookup[key]

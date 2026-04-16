@@ -215,7 +215,8 @@ if lowercase(strip(readline())) == "y"
     g_vars = geom_ref.varias[:g_var]
     z_vars = geom_ref.varias[:z_var]
     j_vars = geom_ref.varias[:j_var]
-    vars = vcat(g_vars, z_vars, j_vars)
+    xi_vars = geom_ref.varias[:xi_var]
+    vars = vcat(g_vars, z_vars, xi_vars, j_vars)
     H_ref = LorentzianSimplexSolver.EOMsHessian.compute_Hessian_block_half(S_ref, vars)
 
     println("\nEvaluating Hessian matrix...")

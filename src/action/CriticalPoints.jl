@@ -6,11 +6,19 @@ using ..SpinAlgebra: imag_unit
 
 export compute_bdy_critical_data
 
+tol = get_tolerance()
 # ------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------
 _realT(::Type{Complex{T}}) where {T<:Real} = T
 _realT(::Type{T}) where {T<:Real} = T
+
+@inline function safe_acosh_arg(x::T; tolence=tol) where T
+    if x < one(T) && x > one(T) - T(tolence)
+        return one(T)
+    end
+    return x
+end
 
 # ------------------------------------------------------------
 # 1. ξ critical parameters (xisoln)
@@ -26,7 +34,6 @@ function compute_xisoln(bdyxi, sgndet, tetareasign, tetn0)
 
     for k in 1:ns
         xisol[k] = Vector{Vector{Vector{T}}}(undef, ntet)
-
         for i in 1:ntet
             nf = length(bdyxi[k][i])
             xisol[k][i] = Vector{Vector{T}}(undef, nf)
@@ -44,11 +51,11 @@ function compute_xisoln(bdyxi, sgndet, tetareasign, tetn0)
                 elseif tetareasign[k][i][j] == 1
                     # timelike face, positive tetareasign
                     if tetn0[k][i][j] == 1
-                        θ = acosh(abs(ξ1[1]))
+                        θ = acosh(safe_acosh_arg(abs(ξ1[1])))
                         φ = angle(ξ1[1]) - angle(ξ1[2])
                         xisol[k][i][j] = [θ, φ]
                     else
-                        θ = acosh(abs(ξ2[1]))
+                        θ = acosh(safe_acosh_arg(abs(ξ2[1])))
                         φ = angle(ξ2[1]) - angle(ξ2[2])
                         xisol[k][i][j] = [θ, φ]
                     end
