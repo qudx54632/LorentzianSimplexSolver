@@ -20,9 +20,9 @@ struct SolveData{T<:Real}
     values_bdry :: Vector{T}
     flags_bdry  :: BitVector
 
-    labels_j    :: Vector{Basic}
-    values_j    :: Vector{T}
-    flags_j     :: BitVector
+    labels_η    :: Vector{Basic}
+    values_η    :: Vector{T}
+    flags_η     :: BitVector
 end
 
 # ============================================================
@@ -248,19 +248,14 @@ function solve_z_var(z_sym::Vector{<:Basic}, z_num::Vector{Complex{T}}) where {T
 end
 
 # ============================================================
-# j variables
+# η variables
 # ============================================================
-function solve_j_var(j_sym::Basic, area::T, tetareasign::Int) where {T<:Real}
-    # skip zero symbol
-    if j_sym == zero(Basic)
+function solve_η_var(η_sym::Basic, area::T, tetareasign::Int) where {T<:Real}
+    if η_sym == Basic(0)
         return Basic[], T[], BitVector()
     end
 
-    labels = Basic[j_sym]
-    values = T[area]
-    flags  = BitVector([tetareasign == 1])
-
-    return labels, values, flags
+    return Basic[η_sym], T[2 * area], BitVector([tetareasign == 1])
 end
 
 # ============================================================
@@ -317,7 +312,7 @@ function run_solver(geom)
 
     g_mat  = geom.varias[:g_mat]
     z_mat  = geom.varias[:z_mat]
-    j_mat  = geom.varias[:j_mat]
+    η_mat  = geom.varias[:η_mat]
     xi_mat = geom.varias[:xi_mat]
 
     ns, ntet = length(g_mat), 5
@@ -334,9 +329,9 @@ function run_solver(geom)
     values_bdry = T[]
     flags_bdry  = BitVector()
 
-    labels_j = Basic[]
-    values_j = T[]
-    flags_j  = BitVector()
+    labels_η = Basic[]
+    values_η = T[]
+    flags_η  = BitVector()
 
     # -------------------------------
     # classification sets (NO string!)
@@ -345,7 +340,7 @@ function run_solver(geom)
 
     seen_vars = Set{Basic}()
     seen_bdry = Set{Basic}()
-    seen_j    = Set{Basic}()
+    seen_η    = Set{Basic}()
 
     # -------------------------------
     # numerical data
@@ -446,16 +441,17 @@ function run_solver(geom)
                 end
             end
 
-            # j (separate)
-            L, V, F = solve_j_var(j_mat[a][i][j], areadataf[a][i][j], tetareasign[a][i][j])
+            # η (separate)
+            L, V, F = solve_η_var(η_mat[a][i][j], areadataf[a][i][j], tetareasign[a][i][j])
+            # @show a, i, j, L, V, F
 
             for k in eachindex(L)
                 sym = L[k]
-                if !(sym in seen_j)
-                    push!(seen_j, sym)
-                    push!(labels_j, sym)
-                    push!(values_j, V[k])
-                    push!(flags_j,  F[k])
+                if !(sym in seen_η)
+                    push!(seen_η, sym)
+                    push!(labels_η, sym)
+                    push!(values_η, V[k])
+                    push!(flags_η,  F[k])
                 end
 
                 # -------------------------
@@ -483,7 +479,7 @@ function run_solver(geom)
     return SolveData(
         labels_vars, values_vars, flags_vars,
         labels_bdry, values_bdry, flags_bdry,
-        labels_j,    values_j,    flags_j
+        labels_η,    values_η,    flags_η
     ), γsym()
 end
 

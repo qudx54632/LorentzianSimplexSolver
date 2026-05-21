@@ -377,10 +377,10 @@ function split_xi_variables(
 end
 
 # ------------------------------------------------------------
-# j variables
-# returns (j_var, j_mat) where j_var is unique flat symbol list
+# η variables
+# returns (η_var, η_mat) where η_var is unique flat symbol list
 # ------------------------------------------------------------
-function build_j_variables(
+function build_η_variables(
     num_vertex::Int,
     OrderBulkFaces,
     OrderBDryFaces;
@@ -416,43 +416,43 @@ function build_j_variables(
         if haskey(symbol_cache, key)
             return symbol_cache[key]
         else
-            s = make_symbol("j_$(a)$(b)$(c)")
+            s = make_symbol("η_$(a)$(b)$(c)")
             symbol_cache[key] = s
             return s
         end
     end
 
     # --------------------------------------------------
-    # Build ordered bulk j_var directly from OrderBulkFaces
+    # Build ordered bulk η_var directly from OrderBulkFaces
     # --------------------------------------------------
-    j_var = Basic[]
+    η_var = Basic[]
     for chain in OrderBulkFaces
         a,b,c = chain[1]
-        push!(j_var, get_symbol(a,b,c))
+        push!(η_var, get_symbol(a,b,c))
     end
 
     # --------------------------------------------------
-    # Boundary j's still collected as set
+    # Boundary η's still collected as set
     # --------------------------------------------------
-    j_bdry_set = Set{Basic}()
+    η_bdry_set = Set{Basic}()
 
     # --------------------------------------------------
-    # Allocate j_mat
+    # Allocate η_mat
     # --------------------------------------------------
-    j_mat = [ [ Vector{Basic}(undef, ntet) for _ in 1:ntet ]
+    η_mat = [ [ Vector{Basic}(undef, ntet) for _ in 1:ntet ]
               for _ in 1:num_vertex ]
 
     z0 = zero(Basic)
 
     # --------------------------------------------------
-    # Fill j_mat
+    # Fill η_mat
     # --------------------------------------------------
     for k in 1:num_vertex
         for i in 1:ntet
             for j in 1:ntet
 
                 if i == j
-                    j_mat[k][i][j] = z0
+                    η_mat[k][i][j] = z0
                     continue
                 end
 
@@ -460,7 +460,7 @@ function build_j_variables(
 
                 if haskey(bulk_dict, key)
                     a,b,c = bulk_dict[key]
-                    j_mat[k][i][j] = get_symbol(a,b,c)
+                    η_mat[k][i][j] = get_symbol(a,b,c)
 
                 else
                     # @assert haskey(bdry_dict, key)
@@ -479,16 +479,16 @@ function build_j_variables(
                     a,b,c = bdry_dict[key]
                     jsym = get_symbol(a,b,c)
 
-                    j_mat[k][i][j] = jsym
-                    push!(j_bdry_set, jsym)
+                    η_mat[k][i][j] = jsym
+                    push!(η_bdry_set, jsym)
                 end
             end
         end
     end
 
-    j_bdry = sort!(collect(j_bdry_set), by=string)
+    η_bdry = sort!(collect(η_bdry_set), by=string)
 
-    return j_var, j_bdry, j_mat
+    return η_var, η_bdry, η_mat
 end
 
 # ------------------------------------------------------------
@@ -558,7 +558,7 @@ function run_define_variables(geom)
 
     g_var, g_bdry, g_mat = build_g_variables(ns, GaugeTet, gspecialPos, GaugeFixUpperTriangle)
     z_var, z_mat = build_z_variables(ns, kappa_all, zspecialPos)
-    j_var, j_bdry, j_mat = build_j_variables(ns, OrderBulkFaces, OrderBDryFaces)
+    η_var, η_bdry, η_mat = build_η_variables(ns, OrderBulkFaces, OrderBDryFaces)
 
     geom.varias[:xi_var] = xi_var
     geom.varias[:xi_bdry] = xi_bdry
@@ -571,9 +571,9 @@ function run_define_variables(geom)
     geom.varias[:z_var]  = z_var
     geom.varias[:z_mat]  = z_mat
 
-    geom.varias[:j_var]  = j_var
-    geom.varias[:j_mat]  = j_mat
-    geom.varias[:j_bdry] = j_bdry
+    geom.varias[:η_var]  = η_var
+    geom.varias[:η_mat]  = η_mat
+    geom.varias[:η_bdry] = η_bdry
 
     geom.varias[:gspecialPos] = gspecialPos
     geom.varias[:zspecialPos] = zspecialPos
@@ -587,7 +587,7 @@ end
 function collect_bdry_symbols(geom)
     bdry_syms = Set{Basic}()
 
-    for key in (:xi_bdry, :g_bdry, :j_bdry)
+    for key in (:xi_bdry, :g_bdry, :η_bdry)
         haskey(geom.varias, key) || continue
 
         vals = geom.varias[key]
@@ -602,7 +602,7 @@ end
 function collect_varias_symbols(geom)
     all_syms = Set{Basic}()
 
-    for key in (:xi_var, :g_var, :z_var, :j_var)
+    for key in (:xi_var, :g_var, :z_var, :η_var)
         haskey(geom.varias, key) || continue
 
         vals = geom.varias[key]

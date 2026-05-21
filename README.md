@@ -1,6 +1,6 @@
 # LorentzianSimplexSolver
 
-LorentzianSimplexSolver is a Julia package for constructing, analyzing, and matching boundary geometries of 4-simplices in covariant Loop Quantum Gravity (LQG) and Lorentzian spinfoam models.
+LorentzianSimplexSolver is a Julia package for constructing, analyzing, and matching boundary geometries of 4-simplices in covariant Loop Quantum Gravity (LQG) and Lorentzian EPRL spinfoam models.
 
 It provides a complete pipeline from discrete boundary data (vertex coordinates or simplices) to:
 - construction of Lorentzian 4-simplex boundary geometry
@@ -77,12 +77,7 @@ The interactive script will guide you through:
 ```text
 LorentzianSimplexSolver/
 ├── examples/
-│   ├── Delta3_main.jl
-│   ├── Double_Delta3_main.jl
 │   ├── example-complex.txt
-│   ├── interactive_main.jl
-│   ├── Lorentzian_simplices_main.ipynb
-│   └── vertex_main.jl
 ├── src/
 │   ├── LorentzianSimplexSolver.jl
 │   ├── action/
@@ -118,7 +113,7 @@ LorentzianSimplexSolver/
 │   └── utils/
 ├── test/
 │   ├── interactive_driver.jl
-│   └── runtests.jl
+│   └── Lorentzian_simplices_main.ipynb
 ├── Project.toml
 └── README.md
 ```

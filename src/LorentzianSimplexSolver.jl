@@ -48,6 +48,7 @@ include("action/SolveVars.jl")                     # solve critical equations
 include("action/ActionEvaluation.jl")             # evaluate action at critical points      
 include("action/EOMsHessian.jl")                    # EOMs and Hessian
 include("action/ReggeAction.jl")                    # Regge action
+include("action/DefineSFAction_no_phase.jl")                   # boundary phase from dihedral angles
 
 # # ---------------- public API ----------------
 # export

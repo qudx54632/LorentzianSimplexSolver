@@ -36,13 +36,13 @@ function build_value_dict(sd, γsym::Basic; γval=nothing)
         d[sym] = val
     end
 
-    for i in eachindex(sd.labels_j)
-        sym = sd.labels_j[i]
-        val = sd.flags_j[i] ?
+    for i in eachindex(sd.labels_η)
+        sym = sd.labels_η[i]
+        val = sd.flags_η[i] ?
             (γval === nothing ?
-                val_basic(sd.values_j[i]) / γsym :
-                val_basic(sd.values_j[i]) / val_basic(γval)) :
-            val_basic(sd.values_j[i])
+                val_basic(sd.values_η[i]) / γsym :
+                val_basic(sd.values_η[i]) / val_basic(γval)) :
+            val_basic(sd.values_η[i])
 
         d[sym] = val
     end
