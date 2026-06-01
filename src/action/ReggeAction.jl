@@ -5,7 +5,7 @@ using Combinatorics
 using ..Volume: distance_sq, V2sq, V3sq, V4sq
 using ..FourSimplexConnectivity: build_tets_all, build_tetfaces_all
 
-export run_iRegge_action
+export run_Regge_action
 
 
 """

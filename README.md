@@ -1,41 +1,8 @@
 # LorentzianSimplexSolver
 
-LorentzianSimplexSolver is a Julia package for constructing, analyzing, and matching boundary geometries of 4-simplices in covariant Loop Quantum Gravity (LQG) and Lorentzian EPRL spinfoam models.
+LorentzianSimplexSolver is a Julia package for constructing Lorentzian 4-simplex geometries and evaluating the Regge and EPRL spinfoam data used in the effective-action calculation.
 
-It provides a complete pipeline from discrete boundary data (vertex coordinates or simplices) to:
-- construction of Lorentzian 4-simplex boundary geometry
-- boundary bivectors, face normals, areas, and dihedral angles
-- SL(2,ℂ) and SO(1,3) parallel-transport consistency checks
-- closure and orientation consistency of bivectors
-- global face matching across multiple simplices
-- automatic κ-orientation fixing
-- construction of parity-related geometries
-- SU(2) and SU(1,1) gauge fixing
-- symbolic spinfoam action construction
-- separation of parity-even and parity-odd critical points
-- extraction of the Regge action and common phase
-- symbolic equations of motion
-- symbolic and numerical Hessian matrices
-
-The package is designed for research and numerical experimentation in spinfoam asymptotics, Regge geometry, and related quantum gravity models.
-
-## Features
-
-- Geometry construction for individual Lorentzian 4-simplices
-- Boundary bivectors, face normals, areas, and dihedral angles
-- SL(2,C) and SO(1,3) parallel-transport consistency checks
-- Closure and orientation consistency of boundary bivectors
-- Global face matching across multiple simplices
-- Automatic κ-orientation fixing
-- Construction of parity-related geometries
-- SU(2) and SU(1,1) gauge fixing
-- Symbolic spinfoam action construction using Symbolics.jl
-- Separation of parity-even and parity-odd critical points
-- Extraction of the Regge action and common phase
-- Symbolic equations of motion
-- Symbolic and numerical Hessian matrices
-- Automatic generation of executable Julia functions for actions, gradients, and Hessians
-- Supports both Float64 and arbitrary precision (BigFloat)
+The public workflow starts from a list of 4-simplices and vertex coordinates, then builds the geometry, matches shared faces, evaluates the Regge action, evaluates the spinfoam action at the critical point, and optionally computes equations of motion and Hessian blocks. Both `Float64` and `BigFloat` arithmetic are supported.
 
 ## Installation (development version)
 
@@ -54,9 +21,9 @@ This package is currently intended for research use and is not yet registered in
 
 ## Quick start (interactive workflow)
 
-An interactive driver is provided under examples/.
+An interactive driver is provided under `examples/`.
 
-    include("test/interactive_driver.jl")
+    include("examples/interactive_main.jl")
 
 From the package root:
 
@@ -72,14 +39,48 @@ The interactive script will guide you through:
 6. Face matching and gauge fixing
 7. Action evaluation, equations of motion, and Hessian computation
 
+## Quick start (function workflow)
+
+The same workflow can be used directly from Julia code:
+
+```julia
+using LorentzianSimplexSolver
+
+configure_precision!(Float64)
+
+simplices = [[1,2,3,4,6], [1,2,3,5,6], [1,2,4,5,6]]
+vertex_coords = Dict(
+    1 => [0.0, 0.0, 0.0, 0.0],
+    2 => [0.0, -2.7745276335252114, -0.9809436521275706, -1.6990442448471226],
+    3 => [0.0, 0.0, 0.0, -3.398088489694245],
+    4 => [-0.24028114141347542, -0.6936319083813028, -0.9809436521275706, -1.6990442448471226],
+    5 => [0.0, 0.0, -2.942830956382712, -1.6990442448471226],
+    6 => [0.8981365593438019, 2.7437225604241213, -0.9809436521275707, -1.6990442448471226],
+)
+
+geom = construct_geometry(simplices, vertex_coords)
+prepare_global_geometry!(geom, simplices)
+
+regge = compute_regge_action(geom, simplices, vertex_coords)
+spinfoam = compute_spinfoam_action(geom, regge; gamma=0.1)
+
+dS = compute_eom(spinfoam)
+hessian = compute_hessian(geom, spinfoam; gamma=0.1)
+```
+
+For a single 4-simplex, `prepare_global_geometry!` is optional.
+
 ## Package structure
 
 ```text
 LorentzianSimplexSolver/
 ├── examples/
+│   ├── interactive_main.jl
 │   ├── example-complex.txt
 ├── src/
 │   ├── LorentzianSimplexSolver.jl
+│   ├── workflow/
+│   │   └── InteractiveWorkflow.jl
 │   ├── action/
 │   │   ├── CriticalPoints.jl
 │   │   ├── DefineAction.jl
@@ -120,8 +121,8 @@ LorentzianSimplexSolver/
 
 ## Main components
 
-- utils/
-  Precision control, parsing, and symbolic variable definitions
+- workflow/
+  Public functions for the paper-level numerical workflow
 
 - algebra/
   Spin algebra, Lorentz group elements, bivector mappings
@@ -134,15 +135,6 @@ LorentzianSimplexSolver/
 
 - action/
   Symbolic action, critical points, equations of motion, Hessians
-
-## Precision control
-
-The package supports user-controlled precision:
-
-- Float64 for fast numerical experiments
-- BigFloat for high-precision asymptotic analysis
-
-Precision is typically selected at runtime in interactive workflows.
 
 ## Dependencies
 

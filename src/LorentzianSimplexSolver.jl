@@ -48,20 +48,35 @@ include("action/SolveVars.jl")                     # solve critical equations
 include("action/ActionEvaluation.jl")             # evaluate action at critical points      
 include("action/EOMsHessian.jl")                    # EOMs and Hessian
 include("action/ReggeAction.jl")                    # Regge action
-include("action/DefineSFAction_no_phase.jl")                   # boundary phase from dihedral angles
+include("action/DefineSFAction_no_phase.jl")        # boundary phase from dihedral angles
+include("workflow/InteractiveWorkflow.jl")          # paper-friendly workflow API
 
-# # ---------------- public API ----------------
-# export
-#     GeometryDataset,
-#     GeometryCollection,
-#     run_geometry_pipeline,
-#     fix_kappa_signs!,
-#     run_face_xi_matching,
-#     run_define_variables,
-#     compute_action,
-#     run_solver,
-#     compute_EOMs,
-#     compute_Hessian,
-#     compute_bdy_critical_data
+# ---------------- public API ----------------
+export configure_precision!,
+       construct_geometry,
+       check_simplex_consistency,
+       prepare_global_geometry!,
+       compute_regge_action,
+       compute_spinfoam_action,
+       compute_eom,
+       check_eom,
+       compute_hessian,
+       ReggeActionData,
+       SpinfoamActionData,
+       HessianData
+
+using .InteractiveWorkflow:
+    configure_precision!,
+    construct_geometry,
+    check_simplex_consistency,
+    prepare_global_geometry!,
+    compute_regge_action,
+    compute_spinfoam_action,
+    compute_eom,
+    check_eom,
+    compute_hessian,
+    ReggeActionData,
+    SpinfoamActionData,
+    HessianData
 
 end

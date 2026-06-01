@@ -121,9 +121,8 @@ function bulk_action(gvariablesall, zvariablesall, ηlabelsMat, kappaMat, OrderB
                             (κlist[i], κlist[i+1]); γ=γ)
         end
 
-        logEh = slog(prodEh)
-        # Sh += ηval * logEh + (ηval * logEh^2) / 2
-        Sh += ηval * logEh
+        # logEh = slog(prodEh)
+        Sh += -ηval * (1 - prodEh)
     end
 
     return Sh

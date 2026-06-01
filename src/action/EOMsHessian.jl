@@ -51,30 +51,15 @@ function compute_EOMs(S::Basic, sd::SolveData)
     return dS
 end
 
-# ============================================================
-# Hessian
-# ============================================================
 function compute_Hessian_block(S::Basic, vars)
-    n = length(vars)
-    dS = [SymEngine.diff(S, v) for v in vars]
-    H = Matrix{Basic}(undef, n, n)
-
-    for i in 1:n
-        H[i, i] = SymEngine.diff(dS[i], vars[i])
-        for j in i+1:n
-            hij = SymEngine.diff(dS[i], vars[j])
-            H[i, j] = hij
-            H[j, i] = hij
-        end
-    end
-
-    return H
+    return compute_hessian_symbols(S, vars; symmetric=true)
 end
 
-# ============================================================
-# Hessian
-# ============================================================
 function compute_Hessian_block_half(S::Basic, vars)
+    return compute_hessian_symbols(S, vars; symmetric=false)
+end
+
+function compute_hessian_symbols(S::Basic, vars; symmetric::Bool)
     n = length(vars)
     dS = [SymEngine.diff(S, v) for v in vars]
     H = Matrix{Basic}(undef, n, n)
@@ -84,7 +69,7 @@ function compute_Hessian_block_half(S::Basic, vars)
         for j in i+1:n
             hij = SymEngine.diff(dS[i], vars[j])
             H[i, j] = hij
-            H[j, i] = Basic(0)
+            H[j, i] = symmetric ? hij : Basic(0)
         end
     end
 

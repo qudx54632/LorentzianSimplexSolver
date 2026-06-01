@@ -109,7 +109,7 @@ function build_g_variables(
                 append!(g_var, g1)
 
             else
-                error("something wrong when define sl2c group variables! key = $key")
+                error("Inconsistent SL(2,C) variable classification for simplex/tetrahedron $key.")
             end
         end
     end
@@ -463,17 +463,8 @@ function build_η_variables(
                     η_mat[k][i][j] = get_symbol(a,b,c)
 
                 else
-                    # @assert haskey(bdry_dict, key)
                     if !haskey(bdry_dict, key)
-                        println("❌ Missing key detected:")
-                        println("  simplex k = ", k)
-                        println("  tetrahedra pair (i,j) = ", (i,j))
-                        println("  full key = ", key)
-
-                        println("  In bulk_dict? ", haskey(bulk_dict, key))
-                        println("  In bdry_dict? ", haskey(bdry_dict, key))
-
-                        error("Key not found in either bulk_dict or bdry_dict")
+                        error("Face key $key was not found in either bulk or boundary face ordering.")
                     end
 
                     a,b,c = bdry_dict[key]

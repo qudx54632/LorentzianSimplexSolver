@@ -5,14 +5,8 @@ export set_big_precision!,
        set_tolerance!,
        parse_numeric_line
 
-# ----------------------------
-# Global scalar type + tolerance
-# ----------------------------
 const _TOLERANCE = Ref{Real}(1e-10)
 
-# ----------------------------
-# Precision control
-# ----------------------------
 """
     set_big_precision!(p)
 
@@ -33,20 +27,20 @@ function set_tolerance!(x::Real)
     _TOLERANCE[] = x
 end
 
-# ----------------------------
-# Parsing utilities
-# ----------------------------
 """
-    parse_numeric_line(line)
+    parse_numeric_line(line, T)
 
-Parse a line like "0, 1, 2, 3" into Vector{ScalarT}.
+Parse a comma- or whitespace-separated line into `Vector{T}`.
 """
-# in PrecisionUtils.jl
-function parse_numeric_line(line::String, ::Type{T}) where {T<:Real}
-    expr = Meta.parse("[$line]")
-    vals = eval(expr)
-    all(x -> x isa Number, vals) || error("Non-numeric input detected: $line")
-    return T.(vals)
+function parse_numeric_line(line::AbstractString, ::Type{T}) where {T<:Real}
+    fields = split(strip(line), r"[,\s]+"; keepempty=false)
+    isempty(fields) && error("No numeric input detected.")
+
+    try
+        return parse.(T, fields)
+    catch err
+        error("Could not parse numeric input \"$(String(line))\" as $T:\n$err")
+    end
 end
 
 end # module

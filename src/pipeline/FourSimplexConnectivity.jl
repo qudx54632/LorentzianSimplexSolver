@@ -2,7 +2,7 @@ module FourSimplexConnectivity
 
 using Combinatorics
 
-export build_global_connectivity
+export build_global_connectivity, build_tets_all, build_tetfaces_all
 
 # ------------------------------------------------------------
 # Build tetrahedra (4-subsets) for each 4-simplex
