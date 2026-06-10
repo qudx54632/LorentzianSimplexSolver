@@ -88,67 +88,63 @@ function read_gamma(::Type{T}) where {T<:Real}
     return only(values)
 end
 
-function main()
-    println("========================================")
-    println(" Spinfoam / Regge Interactive Driver")
-    println("========================================")
+println("========================================")
+println(" Spinfoam / Regge Interactive Driver")
+println("========================================")
 
-    ScalarT = choose_scalartype()
-    tol = configure_precision!(ScalarT)
+ScalarT = choose_scalartype()
+tol = configure_precision!(ScalarT)
 
-    println()
-    println("Using scalar type: $ScalarT")
-    println("Tolerance: $tol")
+println()
+println("Using scalar type: $ScalarT")
+println("Tolerance: $tol")
 
-    simplices = read_simplices()
-    vertices = sort(unique(Iterators.flatten(simplices)))
+simplices = read_simplices()
+vertices = sort(unique(Iterators.flatten(simplices)))
 
-    println()
-    println("Detected $(length(simplices)) simplices with $(length(vertices)) unique vertices.")
+println()
+println("Detected $(length(simplices)) simplices with $(length(vertices)) unique vertices.")
 
-    vertex_coords = read_vertex_coordinates(vertices, ScalarT)
-    gamma_value = read_gamma(ScalarT)
+vertex_coords = read_vertex_coordinates(vertices, ScalarT)
+gamma_value = read_gamma(ScalarT)
 
-    println()
-    println("Building geometry.")
-    geom = construct_geometry(simplices, vertex_coords; verbose=true)
+println()
+println("Building geometry.")
+geom = construct_geometry(simplices, vertex_coords; verbose=true)
 
-    if ask_yes_no("Check simplex consistency?")
-        check_simplex_consistency(geom)
-    end
-
-    if length(simplices) > 1 && ask_yes_no("Connect simplices, match faces, and gauge fix?", default=true)
-        prepare_global_geometry!(
-            geom,
-            simplices;
-            check=ask_yes_no("Run checks after face matching?"),
-            verbose=true,
-        )
-    end
-
-    println()
-    println("Computing Regge action.")
-    regge = compute_regge_action(geom, simplices, vertex_coords)
-    display(regge.iregge)
-
-    println()
-    println("Computing spinfoam action.")
-    spinfoam = compute_spinfoam_action(geom, regge; gamma=gamma_value)
-    display(spinfoam.action)
-
-    if ask_yes_no("Check equations of motion?")
-        check_eom(spinfoam; gamma=gamma_value)
-    end
-
-    if ask_yes_no("Compute Hessian?")
-        hessian = compute_hessian(geom, spinfoam; gamma=gamma_value, eigenvalues=true)
-        println("Hessian size: $(size(hessian.matrix))")
-        println("Eigenvalues sorted by absolute value:")
-        display(hessian.eigenvalues)
-    end
-
-    println()
-    println("=== Program finished ===")
+if ask_yes_no("Check simplex consistency?")
+    check_simplex_consistency(geom)
 end
 
-main()
+if length(simplices) > 1 && ask_yes_no("Connect simplices, match faces, and gauge fix?", default=true)
+    prepare_global_geometry!(
+        geom,
+        simplices;
+        check=ask_yes_no("Run checks after face matching?"),
+        verbose=true,
+    )
+end
+
+println()
+println("Computing Regge action.")
+regge = compute_regge_action(geom, simplices, vertex_coords)
+display(regge.iregge)
+
+println()
+println("Computing spinfoam action.")
+spinfoam = compute_spinfoam_action(geom, regge; gamma=gamma_value)
+display(spinfoam.action)
+
+if ask_yes_no("Check equations of motion?")
+    check_eom(spinfoam; gamma=gamma_value)
+end
+
+if ask_yes_no("Compute Hessian?")
+    hessian = compute_hessian(geom, spinfoam; gamma=gamma_value, eigenvalues=true)
+    println("Hessian size: $(size(hessian.matrix))")
+    println("Eigenvalues sorted by absolute value:")
+    display(hessian.eigenvalues)
+end
+
+println()
+println("=== Program finished ===")
