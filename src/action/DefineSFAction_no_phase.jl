@@ -1,11 +1,11 @@
 module SFaction_no_phase
 
-using LinearAlgebra
 using SymEngine
 using DoubleFloats: Double64
 using ..DefineAction: _I, symone, Eehss, EebssSource, EebssTarget, γsym, compute_action
 using ..DefineSymbols: make_symbol
 using ..ActionEvaluation: eval_symbolic, build_value_dict
+using ..FourSimplexConnectivity: build_single_simplex_boundary_faces
 
 export compute_action_no_bdry_phase
 
@@ -75,7 +75,7 @@ function compute_action_no_bdry_phase(geom, sd, dihedral_angles; γ=γsym())
     if ns > 1
         OrderBDryFaces = geom.connectivity[1]["OrderBDryFaces"]
     else
-        OrderBDryFaces = [kappaMat[1][i][j]== 1 ? [[1, i, j], [1, j, i]] : [[1, j, i], [1, i, j]] for i in 1:5 for j in 1:5 if i < j]
+        OrderBDryFaces = build_single_simplex_boundary_faces(kappaMat[1])
     end
 
     vals = build_value_dict(sd, γsym())

@@ -1,9 +1,5 @@
 module LorentzianSimplexSolver
 
-using Symbolics
-using LinearAlgebra
-using Combinatorics
-
 # ============================================================
 # LorentzianSimplexSolver
 # ============================================================
@@ -46,7 +42,8 @@ include("action/DefineSymbols.jl")                  # Symbolics variables
 include("action/DefineAction.jl")                   # spinfoam action
 include("action/SolveVars.jl")                     # solve critical equations
 include("action/ActionEvaluation.jl")             # evaluate action at critical points      
-include("action/EOMsHessian.jl")                    # EOMs and Hessian
+include("action/EOMs.jl")                           # equations of motion
+include("action/Hessian.jl")                       # Hessian matrix
 include("action/ReggeAction.jl")                    # Regge action
 include("action/DefineSFAction_no_phase.jl")        # boundary phase from dihedral angles
 include("workflow/InteractiveWorkflow.jl")          # paper-friendly workflow API

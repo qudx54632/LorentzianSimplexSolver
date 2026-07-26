@@ -1,7 +1,8 @@
 module SimplexGeometry
 
 export Simplex, edge_or, face_or, eto_f, tet_order,
-       edges_from_faces, edges_from_faces_num
+       edges_from_faces, edges_from_faces_num,
+       build_tets, build_tetfaces
 
 using Combinatorics
 
@@ -10,11 +11,26 @@ using Combinatorics
 # -----------------------------------------------------------
 const VERTICES = 1:5
 
+"""Return the tetrahedra obtained by omitting one vertex from a 4-simplex."""
+build_tets(four_simplex::AbstractVector{<:Integer}) =
+    [collect(tet) for tet in combinations(four_simplex, 4)]
+
+"""
+Return the triangular faces of each tetrahedron, inserting a zero face at
+the tetrahedron's diagonal position to preserve the package's 5x5 indexing.
+"""
+function build_tetfaces(tets::AbstractVector{<:AbstractVector{<:Integer}})
+    return [
+        insert!([collect(face) for face in combinations(tet, 3)], j, [0, 0, 0])
+        for (j, tet) in enumerate(tets)
+    ]
+end
+
 # -----------------------------------------------------------
 # Oriented tetrahedra: all subsets of size 4
 # -----------------------------------------------------------
 const tet_order = collect(reverse(VERTICES))     # {5,4,3,2,1}
-const TETRA = collect(combinations(VERTICES, 4)) # 5 tetrahedra
+const TETRA = build_tets(collect(VERTICES))      # 5 tetrahedra
 
 # -----------------------------------------------------------
 # Edges and faces

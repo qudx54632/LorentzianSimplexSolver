@@ -2,15 +2,13 @@ module Dihedral
 
 using LinearAlgebra
 using ..PrecisionUtils: get_tolerance
-using ..SpinAlgebra: Params
+using ..SpinAlgebra: eta
 
 export theta_ab
 
-η(::Type{T}) where {T<:Real} = Params{T}().eta
-
 # Minkowski inner product
 minkowski_dot(a::AbstractVector{T}, b::AbstractVector{T}) where {T<:Real} =
-    (a' * η(T) * b)[1]
+    (a' * eta(T) * b)[1]
 
 # Minkowski squared norm
 minkowski_norm2(a::AbstractVector{T}) where {T<:Real} =

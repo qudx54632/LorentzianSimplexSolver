@@ -3,14 +3,15 @@ module LorentzGroup
 using LinearAlgebra
 using GenericLinearAlgebra
 using ..PrecisionUtils: get_tolerance
-using ..SpinAlgebra: Params, Jvec, jjvec,  σ1, imag_unit
+using ..SpinAlgebra: eta, Jvec, jjvec, σ1, imag_unit
 using ..Dihedral: theta_ab
 
 export getso13, getsl2c
 
-η(::Type{T}) where {T<:Real} = Params{T}().eta
-J(::Type{T}) where {T<:Real} = Jvec(T)
-jj(::Type{T}) where {T<:Real} = jjvec(T)
+# Matrix logarithms of real Lorentz transforms may have complex entries; the
+# generators still use the underlying real precision.
+_real_scalar_type(::Type{T}) where {T<:Real} = T
+_real_scalar_type(::Type{Complex{T}}) where {T<:Real} = T
 
 # -------------------------------------------------------------
 # Helper: trace
@@ -20,15 +21,15 @@ tr(A) = LinearAlgebra.tr(A)
 # -------------------------------------------------------------
 # Helper: Minkowski norm squared
 # -------------------------------------------------------------
-minkowski_norm2(v::AbstractVector{T}) where {T<:Real} = (v' * η(T) * v)[1]
+minkowski_norm2(v::AbstractVector{T}) where {T<:Real} = (v' * eta(T) * v)[1]
 
 # -------------------------------------------------------------
 # Helper: approximate vector comparison (for special cases)
 # -------------------------------------------------------------
 
-function vec_is(a::AbstractVector{T}, b::NTuple{4,Real}; atol=get_tolerance()) where {T<:Real}
+function vec_is(a::AbstractVector{T}, b::NTuple{4,Real}) where {T<:Real}
     length(a) == 4 || return false
-    tol = T(atol)
+    tol = T(get_tolerance())
     for i in 1:4
         if !isapprox(a[i], T(b[i]), atol=tol)
             return false
@@ -47,7 +48,7 @@ end
 function wedge(a::AbstractVector{T}, b::AbstractVector{T}) where {T<:Real}
     @assert length(a) == 4 && length(b) == 4
     B = a * b' .- b * a'
-    return B * η(T)
+    return B * eta(T)
 end
 
 function exp_so13(θ::T, B::AbstractMatrix{T}) where {T<:Real}
@@ -85,9 +86,9 @@ function getso13(Na::AbstractVector{T}) where {T<:Real}
     end
 
     # Special exact cases (identity / simple reflection)
-    if vec_is(Na, (1,0,0,0); atol=tol) || vec_is(Na, (0,0,0,1); atol=tol) || vec_is(Na, (-1,0,0,0); atol=tol)
+    if vec_is(Na, (1,0,0,0)) || vec_is(Na, (0,0,0,1)) || vec_is(Na, (-1,0,0,0))
         return Matrix{T}(I, 4, 4)
-    elseif vec_is(Na, (0,0,0,-1); atol=tol)
+    elseif vec_is(Na, (0,0,0,-1))
         return Matrix(Diagonal(T[one(T), one(T), -one(T), -one(T)]))
     end
 
@@ -107,26 +108,29 @@ end
 # -------------------------------------------------------------
 # Spin-1/2 rep of bivector: B -> 2x2 matrix in sl(2,C)
 # -------------------------------------------------------------
-function bivec1tohalf(bivec::AbstractMatrix{T}) where {T<:Real}
-    # coefficients α_i, β_i
-    coeffs = Vector{Complex{T}}(undef, 6)
+function bivec1tohalf(bivec::AbstractMatrix{T}) where {T<:Number}
+    RT = _real_scalar_type(T)
+    CT = Complex{RT}
+    vector_generators = Jvec(RT)
+    spin_generators = jjvec(RT)
+    coeffs = Vector{CT}(undef, 6)
 
     # first 3: + Tr(B J_i)
     for i in 1:3
-        coeffs[i] = tr(bivec * J(T)[i])
+        coeffs[i] = CT(tr(bivec * vector_generators[i]))
     end
 
     # last 3: - Tr(B J_i) for i=4..6
     for i in 4:6
-        coeffs[i] = -tr(bivec * J(T)[i])
+        coeffs[i] = -CT(tr(bivec * vector_generators[i]))
     end
 
-    coeffs .*= (one(T) / T(2))
+    coeffs .*= inv(RT(2))
 
     # linear combination Σ coeff_i * jjvec[i]
-    M = zeros(Complex{T}, 2, 2)
+    M = zeros(CT, 2, 2)
     for i in 1:6
-        M .+= coeffs[i] .* jj(T)[i]
+        M .+= coeffs[i] .* spin_generators[i]
     end
     return M
 end
@@ -172,9 +176,9 @@ function getsl2c(Na::AbstractVector{T}) where {T<:Real}
     end
 
     # Special cases
-    if vec_is(Na, (1,0,0,0); atol=tol) || vec_is(Na, (0,0,0,1); atol=tol) || vec_is(Na, (-1,0,0,0); atol=tol)
+    if vec_is(Na, (1,0,0,0)) || vec_is(Na, (0,0,0,1)) || vec_is(Na, (-1,0,0,0))
         return Matrix{Complex{T}}(I, 2, 2)
-    elseif vec_is(Na, (0,0,0,-1); atol=tol)
+    elseif vec_is(Na, (0,0,0,-1))
         i = imag_unit(T)
         return i * Complex{T}.(σ1(T))
     end

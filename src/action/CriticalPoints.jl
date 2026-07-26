@@ -2,19 +2,17 @@ module CriticalPoints
 
 using LinearAlgebra
 using ..PrecisionUtils: get_tolerance
-using ..SpinAlgebra: imag_unit
 
 export compute_bdy_critical_data
 
-tol = get_tolerance()
 # ------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------
 _realT(::Type{Complex{T}}) where {T<:Real} = T
 _realT(::Type{T}) where {T<:Real} = T
 
-@inline function safe_acosh_arg(x::T; tolence=tol) where T
-    if x < one(T) && x > one(T) - T(tolence)
+@inline function safe_acosh_arg(x::T) where T
+    if x < one(T) && x > one(T) - T(get_tolerance())
         return one(T)
     end
     return x
@@ -29,7 +27,7 @@ function compute_xisoln(bdyxi, sgndet, tetareasign, tetn0)
 
     CT = eltype(bdyxi[1][1][1][1])     # Complex{T}
     T  = _realT(CT)
-    # xisol[k][i][j] = Vector{Float64} of length 2
+    # Each solution stores two real parameters in the geometry's scalar type.
     xisol = Vector{Vector{Vector{Vector{T}}}}(undef, ns)
 
     for k in 1:ns
@@ -125,11 +123,11 @@ function compute_zdataf(kappa, tetareasign, gdataof, bdyxi)
 
         for i in 1:ntet
             zdata[k][i] = Vector{Vector{Complex{T}}}(undef, ntet)
+            ginvT = Matrix(inv(transpose(gdataof[k][i])))
 
             for j in 1:ntet
                 if kappa[k][i][j] == 1 && i != j
                     ξ = (tetareasign[k][i][j] > 0) ? bdyxi[k][i][j][1] : bdyxi[k][i][j][2]
-                    ginvT = Matrix(inv(transpose(gdataof[k][i])))
                     zdata[k][i][j] = getz(ginvT, ξ)
                 else
                     zdata[k][i][j] = copy(zeroz)
@@ -172,6 +170,3 @@ function compute_bdy_critical_data(geom)
 end
 
 end # module
-
-
-

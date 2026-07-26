@@ -1,6 +1,5 @@
 module KappaFromNormals
 
-using LinearAlgebra
 using ..PrecisionUtils: get_tolerance
 
 export compute_kappa

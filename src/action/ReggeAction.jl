@@ -1,9 +1,10 @@
 module ReggeAction
 
 using ForwardDiff
-using Combinatorics
 using ..Volume: distance_sq, V2sq, V3sq, V4sq
-using ..FourSimplexConnectivity: build_tets_all, build_tetfaces_all
+using ..FourSimplexConnectivity: build_tets_all,
+                                 build_tetfaces_all,
+                                 build_single_simplex_boundary_faces
 
 export run_Regge_action
 
@@ -200,9 +201,8 @@ function run_Regge_action(geom, simplices, vertex_coords)
         tets = build_tets_all(simplices)
         tetsfaces = build_tetfaces_all(tets)
         kappaMat = [geom.simplex[i].kappa for i in 1:length(geom.simplex)]
-        OrderBDryFaces = [kappaMat[1][i][j]== 1 ? [[1, i, j], [1, j, i]] : [[1, j, i], [1, i, j]] for i in 1:5 for j in 1:5 if i < j]
+        OrderBDryFaces = build_single_simplex_boundary_faces(kappaMat[1])
         bdrytriangles = [tetsfaces[faces[1][1]][faces[1][2]][faces[1][3]] for faces in OrderBDryFaces]
-        Regge_action = 0
         dihedral_angles = []
         areas = []
         for tri3 in bdrytriangles

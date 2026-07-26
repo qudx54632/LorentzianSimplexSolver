@@ -69,15 +69,16 @@ function check_parallel_transport(sl2c, bivec)
 
     nbdy = length(sl2c)
     ntet = length(sl2c[1])
+    sl2c_inv = [[inv(g) for g in row] for row in sl2c]
 
     for k in 1:nbdy
         for i in 1:ntet
             gi = sl2c[k][i]
-            giinv = inv(gi)
+            giinv = sl2c_inv[k][i]
 
             for j in 1:ntet
                 gj = sl2c[k][j]
-                gjinv = inv(gj)
+                gjinv = sl2c_inv[k][j]
 
                 Bij = bivec[k][i][j]
                 Bji = bivec[k][j][i]

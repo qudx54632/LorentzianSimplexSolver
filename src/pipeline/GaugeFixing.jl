@@ -2,8 +2,7 @@ module GaugeFixingSU
 
 using LinearAlgebra
 
-using ..PrecisionUtils: get_tolerance
-using ..SpinAlgebra: σ3, imag_unit
+using ..SpinAlgebra: imag_unit
 using ..FaceXiMatching: compute_tetn0signtest, build_su_from_bivec, build_xi_from_su
 
 export run_su2_su11_gauge_fix
@@ -14,12 +13,6 @@ export run_su2_su11_gauge_fix
 # Get underlying real scalar type from a Complex matrix element type
 _real_scalar_type(::Type{Complex{T}}) where {T<:Real} = T
 _real_scalar_type(::Type{T}) where {T<:Real} = T
-
-function _scalarT_from_geom(geom)
-    # solgsl2c :: Vector{Matrix{Complex{T}}}
-    elT = eltype(geom.simplex[1].solgsl2c[1])
-    return _real_scalar_type(elT)
-end
 
 # ------------------------------------------------------------
 # SL(2,C) → SU(2)
@@ -69,11 +62,9 @@ function build_su2_triangle(sl2ctest2, GaugeFixUpperTriangle, oppositesl2c)
             key = (s, t)
 
             if key in gauge_keys
-                # println("gauge key detected: ", key)
                 su2triangle[s][t] = sl2c_to_su2(sl2ctest2[s][t])
 
             elseif key in opp_keys
-                # println("opposite key detected: ", key)
                 (s0, t0) = opp_to_gauge[key]
                 su2triangle[s][t] = sl2c_to_su2(sl2ctest2[s0][t0])
             end
@@ -134,14 +125,6 @@ function build_Uinverse(ns::Int, ntet::Int, lookup, gaugespacelike, su)
 
     Uinverse = [[I2 for _ in 1:ntet] for _ in 1:ns]
 
-    # for k in 1:ns, i in 1:ntet
-    #     key = (k, i)
-    #     if haskey(lookup, key)
-    #         p = lookup[key]
-    #         s, t, j_sp = gaugespacelike[p][1]
-    #         Uinverse[k][i] = inv(su[s][t][j_sp])
-    #     end
-    # end
     for k in 1:ns, i in 1:ntet
         key = (k, i)
 
@@ -196,8 +179,8 @@ function apply_left_on_xi(U, bdyxi)
 end
 
 # ------------------------------------------------------------
-# Build U2 (phase fixing) for timelike gauge
-# Supports lookup keys as String "k_i" (your current connectivity format).
+# Build the diagonal phase correction for timelike gauge data. Connectivity
+# uses `(simplex, tetrahedron)` tuple keys throughout this pipeline.
 # ------------------------------------------------------------
 function build_U2(ns::Int, ntet::Int, lookup, gaugetimelike, xi)
     # infer scalar type from xi
@@ -207,16 +190,14 @@ function build_U2(ns::Int, ntet::Int, lookup, gaugetimelike, xi)
     I2 = Matrix{Complex{T}}(I, 2, 2)
     U2 = [[I2 for _ in 1:ntet] for _ in 1:ns]
 
-    tol = T(get_tolerance())  # not strictly needed here, but consistent
-
     for k in 1:ns, i in 1:ntet
         key = (k, i)
         haskey(lookup, key) || continue
 
         pos = lookup[key]
-        v, t, f = gaugetimelike[pos][1]
+        f = gaugetimelike[pos][1][3]
 
-        # use xi[k][i][f][1][2] as in your MMA mapping
+        # The first triple defines the phase-fixing face for this shared pair.
         z = xi[k][i][f][1][2]
         ϕ = angle(z)
 
@@ -252,20 +233,21 @@ function run_su2_su11_gauge_fix(geom)
     Ofix = conn["oppositesl2c"]
 
     su2triangle = build_su2_triangle(sl2c, Gfix, Ofix)
+    su2triangle_inv = [[inv(U) for U in row] for row in su2triangle]
 
     sl2c3 = [
-        [ sl2c[i][j] * inv(su2triangle[i][j]) for j in 1:ntet ]
+        [ sl2c[i][j] * su2triangle_inv[i][j] for j in 1:ntet ]
         for i in 1:ns
     ]
 
     bivec3 = [
-        [ [ su2triangle[i][j] * B * inv(su2triangle[i][j]) for B in bivec[i][j] ]
+        [ [ su2triangle[i][j] * B * su2triangle_inv[i][j] for B in bivec[i][j] ]
           for j in 1:ntet ]
         for i in 1:ns
     ]
 
     n0   = compute_tetn0signtest(bivec3, sgnd, area)
-    su3  = build_su_from_bivec(bivec3, sgnd, area, n0)
+    su3  = build_su_from_bivec(bivec3, sgnd, area)
     xi3  = build_xi_from_su(su3, sgnd, area, n0)
 
     # SU(1,1) gauge fix

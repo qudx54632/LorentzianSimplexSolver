@@ -4,6 +4,15 @@ LorentzianSimplexSolver is a Julia package for constructing Lorentzian 4-simplex
 
 The public workflow starts from a list of 4-simplices and vertex coordinates, then builds the geometry, matches shared faces, evaluates the Regge action, evaluates the spinfoam action at the critical point, and optionally computes equations of motion and Hessian blocks. Both `Float64` and `BigFloat` arithmetic are supported.
 
+## Current physical scope
+
+The action currently implemented in this package is the spacelike EPRL
+spinfoam action. The geometry pipeline is more general: boundary data and
+critical-point configurations can be constructed for complexes containing
+timelike tetrahedra. Support for timelike tetrahedra here refers to the
+geometry, boundary data, and critical-point construction; it should not be
+interpreted as an implementation of the timelike EPRL action.
+
 ## Installation (development version)
 
 Clone the repository and activate it as a Julia project:
@@ -64,9 +73,20 @@ prepare_global_geometry!(geom, simplices)
 regge = compute_regge_action(geom, simplices, vertex_coords)
 spinfoam = compute_spinfoam_action(geom, regge; gamma=0.1)
 
+# Reuse the symbolic action when only gamma changes.
+spinfoam_gamma2 = compute_spinfoam_action(spinfoam; gamma=0.2)
+
 dS = compute_eom(spinfoam)
-hessian = compute_hessian(geom, spinfoam; gamma=0.1)
+check_eom(spinfoam; gamma=0.1, eom=dS)
+hessian = compute_hessian(geom, spinfoam; gamma=0.1, eom=dS)
 ```
+
+The optional `eom=dS` argument reuses the first derivatives when checking the
+equations of motion and constructing the Hessian.
+
+Precision must be configured before numeric coordinates are created or parsed.
+For each configured workflow, the whole package uses one tolerance defined in
+`PrecisionUtils`: `1e-10` for Float64 and `1e-12` for BigFloat.
 
 For a single 4-simplex, `prepare_global_geometry!` is optional.
 
@@ -85,7 +105,8 @@ LorentzianSimplexSolver/
 │   │   ├── CriticalPoints.jl
 │   │   ├── DefineAction.jl
 │   │   ├── DefineSymbols.jl
-│   │   ├── EOMsHessian.jl
+│   │   ├── EOMs.jl
+│   │   ├── Hessian.jl
 │   │   ├── ReggeAction.jl
 │   │   ├── SolveVars.jl
 │   │   └── ActionEvaluation.jl
@@ -101,7 +122,7 @@ LorentzianSimplexSolver/
 │   │   ├── KappaFromNormals.jl
 │   │   ├── SimplexGeometry.jl
 │   │   ├── TetraNormals.jl
-│   │   ├── ThreeDtetra.jl
+│   │   ├── ThreeDTetra.jl
 │   │   └── Volume.jl
 │   ├── pipeline/
 │   │   ├── FaceMatchingChecks.jl
@@ -112,6 +133,7 @@ LorentzianSimplexSolver/
 │   │   ├── GeometryPipeline.jl
 │   │   └── KappaOrientation.jl
 │   └── utils/
+│       └── PrecisionUtils.jl
 ├── test/
 │   ├── interactive_driver.jl
 │   └── Lorentzian_simplices_main.ipynb
@@ -141,7 +163,6 @@ LorentzianSimplexSolver/
 Key dependencies include:
 
 - LinearAlgebra
-- Symbolics
 - GenericLinearAlgebra
 - Combinatorics
 - SymEngine

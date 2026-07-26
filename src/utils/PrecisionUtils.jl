@@ -1,46 +1,71 @@
 module PrecisionUtils
 
-export set_big_precision!,
-       get_tolerance,
-       set_tolerance!,
+export get_tolerance,
        parse_numeric_line
 
-const _TOLERANCE = Ref{Real}(1e-10)
+# The three numerical settings used by the whole package.
+const ACTIVE_TYPE = Ref(Float64)
+const BIGFLOAT_BITS = Ref(0)
+const TOLERANCE = Ref{Real}(1e-10)
 
-"""
-    set_big_precision!(p)
+function configure_precision!(T; precision=100)
+    if T === Float64
+        TOLERANCE[] = 1e-10
+    elseif T === BigFloat
+        precision > 0 || error("BigFloat precision must be positive, got $precision.")
+        setprecision(BigFloat, precision)
+        BIGFLOAT_BITS[] = precision
+        TOLERANCE[] = BigFloat("1e-12")
+    else
+        error("Supported scalar types are Float64 and BigFloat, got $T.")
+    end
 
-Enable BigFloat arithmetic with precision `p`.
-"""
-function set_big_precision!(p::Integer; tol=nothing)
-    setprecision(p)
-    _TOLERANCE[] = isnothing(tol) ? sqrt(eps(BigFloat)) : tol
+    ACTIVE_TYPE[] = T
+    return TOLERANCE[]
+end
+
+get_tolerance() = TOLERANCE[]
+
+function validate_active_precision(T)
+    T === ACTIVE_TYPE[] || error("Expected $(ACTIVE_TYPE[]) numbers, got $T.")
+    if T === BigFloat
+        Base.precision(BigFloat) == BIGFLOAT_BITS[] ||
+            error("BigFloat precision changed during the calculation.")
+    end
+
     return nothing
 end
 
-# ----------------------------
-# Tolerance API
-# ----------------------------
-get_tolerance() = _TOLERANCE[]
+function validate_precision(T, coordinates)
+    validate_active_precision(T)
+    all(eltype(point) === T for point in coordinates) ||
+        error("All coordinates must use $T.")
 
-function set_tolerance!(x::Real)
-    _TOLERANCE[] = x
+    if T === BigFloat
+        all(Base.precision(x) == BIGFLOAT_BITS[] for point in coordinates for x in point) ||
+            error("Configure BigFloat precision before creating coordinates.")
+    end
+
+    return nothing
 end
 
-"""
-    parse_numeric_line(line, T)
+function validate_number_precision(value, T, name)
+    validate_active_precision(T)
+    value === nothing && return nothing
+    (value isa Integer || value isa Rational) && return nothing
+    value isa T || error("$name must use $T.")
+    if T === BigFloat
+        Base.precision(value) == BIGFLOAT_BITS[] ||
+            error("$name uses a different BigFloat precision.")
+    end
 
-Parse a comma- or whitespace-separated line into `Vector{T}`.
-"""
-function parse_numeric_line(line::AbstractString, ::Type{T}) where {T<:Real}
+    return nothing
+end
+
+function parse_numeric_line(line, T)
     fields = split(strip(line), r"[,\s]+"; keepempty=false)
     isempty(fields) && error("No numeric input detected.")
-
-    try
-        return parse.(T, fields)
-    catch err
-        error("Could not parse numeric input \"$(String(line))\" as $T:\n$err")
-    end
+    return parse.(T, fields)
 end
 
 end # module

@@ -3,7 +3,7 @@ module InteractiveWorkflow
 using LinearAlgebra
 using SymEngine
 
-using ..PrecisionUtils
+import ..PrecisionUtils
 using ..GeometryTypes
 using ..GeometryPipeline
 using ..GeometryConsistency
@@ -17,7 +17,8 @@ using ..DefineSymbols
 using ..SolveVars
 using ..SFaction_no_phase
 using ..ActionEvaluation
-using ..EOMsHessian
+using ..EOMs
+using ..Hessian
 using ..ReggeAction
 
 export configure_precision!,
@@ -58,25 +59,17 @@ Base.@kwdef struct HessianData
     eigenvalues::Any = nothing
 end
 
-function configure_precision!(::Type{T}; precision::Integer=100, tolerance=nothing) where {T<:Real}
-    tol = tolerance === nothing ? default_tolerance(T) : tolerance
+configure_precision!(::Type{T}; precision::Integer=100) where {T<:AbstractFloat} =
+    PrecisionUtils.configure_precision!(T; precision=precision)
 
-    if T === BigFloat
-        setprecision(BigFloat, precision)
-        PrecisionUtils.set_big_precision!(precision; tol=tol)
-    else
-        PrecisionUtils.set_tolerance!(tol)
-    end
-
-    return tol
+function validate_geometry_precision(geom::GeometryTypes.GeometryCollection{T}) where {T<:AbstractFloat}
+    PrecisionUtils.validate_active_precision(T)
+    return T
 end
-
-default_tolerance(::Type{Float64}) = 1e-8
-default_tolerance(::Type{BigFloat}) = BigFloat(1e-20)
-default_tolerance(::Type{T}) where {T<:Real} = sqrt(eps(T))
 
 function construct_geometry(simplices, vertex_coords; verbose::Bool=false)
     T = eltype(first(values(vertex_coords)))
+    PrecisionUtils.validate_precision(T, values(vertex_coords))
     datasets = GeometryTypes.GeometryDataset{T}[]
 
     for (idx, simplex) in enumerate(simplices)
@@ -89,11 +82,20 @@ function construct_geometry(simplices, vertex_coords; verbose::Bool=false)
 end
 
 function check_simplex_consistency(geom)
+    validate_geometry_precision(geom)
+    failed_simplices = Int[]
+
     for (idx, simplex) in enumerate(geom.simplex)
-        println("--- Checking simplex $idx ---")
-        GeometryConsistency.check_sl2c_parallel_transport(simplex.solgsl2c, simplex.bdybivec55)
-        GeometryConsistency.check_so13_parallel_transport(simplex.solgso13, simplex.bdybivec4d55)
-        GeometryConsistency.check_closure_bivectors(simplex.kappa, simplex.areas, simplex.bdybivec55)
+        GeometryConsistency.critical_point_equations_satisfied(simplex) ||
+            push!(failed_simplices, idx)
+    end
+
+    if isempty(failed_simplices)
+        println("✓ Every 4-simplex satisfies the critical point equations.")
+    else
+        for idx in failed_simplices
+            println("✗ 4-simplex $idx does not satisfy the critical point equations.")
+        end
     end
 
     return nothing
@@ -108,6 +110,8 @@ function prepare_global_geometry!(
     check::Bool=false,
     verbose::Bool=false
 )
+    validate_geometry_precision(geom)
+
     if length(simplices) <= 1
         verbose && println("Only one simplex detected. Global connectivity is skipped.")
         return geom
@@ -140,6 +144,9 @@ function prepare_global_geometry!(
 end
 
 function compute_regge_action(geom, simplices, vertex_coords)
+    T = validate_geometry_precision(geom)
+    PrecisionUtils.validate_precision(T, values(vertex_coords))
+
     deficit_angles, dihedral_angles, bulk_areas, boundary_areas, iregge =
         ReggeAction.run_Regge_action(geom, simplices, vertex_coords)
 
@@ -153,7 +160,9 @@ function compute_regge_action(geom, simplices, vertex_coords)
 end
 
 function compute_spinfoam_action(geom, regge::ReggeActionData; γ=nothing, gamma=nothing)
+    T = validate_geometry_precision(geom)
     gamma_value = resolve_gamma(γ, gamma, nothing)
+    PrecisionUtils.validate_number_precision(gamma_value, T, "gamma")
     gamma_symbol = DefineAction.γsym()
 
     DefineSymbols.run_define_variables(geom)
@@ -182,13 +191,49 @@ function compute_spinfoam_action(geom, regge::ReggeActionData; γ=nothing, gamma
     )
 end
 
-compute_eom(action::SpinfoamActionData) =
-    EOMsHessian.compute_EOMs(action.action_no_phase, action.solve_data)
+"""
+Re-evaluate an existing symbolic spinfoam action at a new Immirzi parameter.
+The geometry, critical data, boundary phases, and symbolic action are reused.
+"""
+function compute_spinfoam_action(prepared::SpinfoamActionData; γ=nothing, gamma=nothing)
+    T = real_type(prepared.solve_data)
+    PrecisionUtils.validate_active_precision(T)
+    gamma_value = resolve_gamma(γ, gamma, nothing)
+    PrecisionUtils.validate_number_precision(gamma_value, T, "gamma")
+    value_dict = ActionEvaluation.build_value_dict(
+        prepared.solve_data,
+        prepared.gamma_symbol;
+        γval=gamma_value,
+    )
+    action = SymEngine.expand(
+        ActionEvaluation.eval_symbolic(prepared.action_no_phase, value_dict),
+    )
 
-function check_eom(action::SpinfoamActionData; γ=nothing, gamma=nothing)
-    gamma_value = resolve_gamma(γ, gamma, one(real_type(action.solve_data)))
-    dS = compute_eom(action)
-    EOMsHessian.check_EOMs(dS, action.solve_data; γ=gamma_value)
+    return SpinfoamActionData(
+        symbols=prepared.symbols,
+        phase_solution=prepared.phase_solution,
+        action_no_phase=prepared.action_no_phase,
+        value_dict=value_dict,
+        action=action,
+        solve_data=prepared.solve_data,
+        gamma_symbol=prepared.gamma_symbol,
+    )
+end
+
+function compute_eom(action::SpinfoamActionData; variables=nothing)
+    T = real_type(action.solve_data)
+    PrecisionUtils.validate_active_precision(T)
+    vars = variables === nothing ? action.solve_data.labels_vars : variables
+    return EOMs.compute_EOMs(action.action_no_phase, vars)
+end
+
+function check_eom(action::SpinfoamActionData; γ=nothing, gamma=nothing, eom=nothing)
+    T = real_type(action.solve_data)
+    PrecisionUtils.validate_active_precision(T)
+    gamma_value = resolve_gamma(γ, gamma, one(T))
+    PrecisionUtils.validate_number_precision(gamma_value, T, "gamma")
+    dS = eom === nothing ? compute_eom(action) : eom
+    EOMs.check_EOMs(dS, action.solve_data; γ=gamma_value)
     return dS
 end
 
@@ -198,17 +243,23 @@ function compute_hessian(
     γ=nothing,
     gamma=nothing,
     variables=nothing,
+    eom=nothing,
     half::Bool=true,
     eigenvalues::Bool=false,
 )
-    gamma_value = resolve_gamma(γ, gamma, one(real_type(action.solve_data)))
+    T = validate_geometry_precision(geom)
+    T === real_type(action.solve_data) || error(
+        "Geometry and action use different scalar types.",
+    )
+    gamma_value = resolve_gamma(γ, gamma, one(T))
+    PrecisionUtils.validate_number_precision(gamma_value, T, "gamma")
     vars = variables === nothing ? spinfoam_variables(geom) : variables
 
     H_symbols = half ?
-        EOMsHessian.compute_Hessian_block_half(action.action_no_phase, vars) :
-        EOMsHessian.compute_Hessian_block(action.action_no_phase, vars)
+        Hessian.compute_Hessian_block_half(action.action_no_phase, vars; eom=eom) :
+        Hessian.compute_Hessian_block(action.action_no_phase, vars; eom=eom)
 
-    H_matrix = EOMsHessian.evaluate_hessian_block(H_symbols, action.solve_data; γ=gamma_value)
+    H_matrix = Hessian.evaluate_hessian_block(H_symbols, action.solve_data; γ=gamma_value)
     H_eigenvalues = eigenvalues ? sort(eigvals(H_matrix), by=abs, rev=true) : nothing
 
     return HessianData(

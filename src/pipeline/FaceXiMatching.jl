@@ -6,7 +6,8 @@ using GenericSchur
 
 using ..PrecisionUtils: get_tolerance
 using ..ThreeDTetra: threetofour
-using ..SpinAlgebra: Params, sigmabar4, σ3, imag_unit, Jvec, jjvec
+using ..SpinAlgebra: σ3, imag_unit
+using ..LorentzGroup: bivec1tohalf, exp2x2_from_square
 using ..XiFromSU: get_xi_from_su
 using ..Su2Su11FromBivector: su_from_bivectors
 
@@ -21,8 +22,9 @@ compute_tetchange(sharedTetsPos) =
 # ============================================================
 # 2. SO(3) from 4 normals
 # ============================================================
-function so3_from_normals(nabchange, nabref; tol)
-     T = eltype(nabchange[1])
+function so3_from_normals(nabchange, nabref)
+    T = eltype(nabchange[1])
+    tol = T(get_tolerance())
     Y = hcat(nabchange[1], nabchange[2], nabchange[3])
     Z = hcat(nabref[1],    nabref[2],    nabref[3])
     M = Z * inv(Y)
@@ -41,8 +43,9 @@ end
 # ============================================================
 # 3. SO(1,2) version
 # ============================================================
-function so12_from_normals(nabchange, nabref; tol)
+function so12_from_normals(nabchange, nabref)
     T = eltype(nabchange[1])
+    tol = T(get_tolerance())
     η = Diagonal(T[-one(T), one(T), one(T)])
 
     A_row = zeros(T,4,3)
@@ -72,8 +75,6 @@ function build_SO_matrix(nabtest, sharedTetsPos, Tetchange, sgndet)
     ntets = length(nabtest[1])
 
     T = eltype(nabtest[1][1][1][1])
-    tol = T(get_tolerance())
-
     SOmat = [ [Matrix{T}(I,3,3) for _ in 1:ntets]
               for _ in 1:ns ]
 
@@ -95,8 +96,8 @@ function build_SO_matrix(nabtest, sharedTetsPos, Tetchange, sgndet)
         nabR = nabtest[iref][jref][idxRef]
 
         SOmat[i][j] = sgndet[i][j] == 1 ?
-            so3_from_normals(nabC, nabR;tol=tol) :
-            so12_from_normals(nabC, nabR;tol=tol)
+            so3_from_normals(nabC, nabR) :
+            so12_from_normals(nabC, nabR)
     end
 
     return SOmat
@@ -193,9 +194,6 @@ function so4_from_so3(SO, sgndet)
         A[1:3, 1:3] .= SO
         A[4,4] = one(T)
     end
-    # if A[1,1] <= zero(T)
-    #     A .= -A
-    # end
     return A
 end
 
@@ -248,60 +246,10 @@ end
 function log_so13(Λ::AbstractMatrix{T}) where {T<:Real}
     @assert size(Λ) == (4,4)
 
-    V = eigvecs(Λ)
-    λ = eigvals(Λ)
-    log_vals = V * Diagonal(log.(λ)) * inv(V)
+    decomposition = eigen(Λ)
+    V = decomposition.vectors
+    log_vals = V * Diagonal(log.(decomposition.values)) * inv(V)
     return log_vals
-end
-
-"""
-    exp_sl2(X)
-
-Exact exponential for 2×2 sl(2,C) matrix X.
-Works for BigFloat and Float64.
-"""
-function exp_sl2(X::AbstractMatrix{Complex{T}}) where {T<:Real}
-    @assert size(X) == (2,2)
-
-    I2 = Matrix{Complex{T}}(I, 2, 2)
-
-    X2 = X * X
-    α = real(tr(X2)) / T(2)
-    tol = T(get_tolerance())
-
-    if abs(α) < tol
-        # Nilpotent / very small
-        return I2 + X
-    elseif α > 0
-        s = sqrt(α)
-        return cosh(s) * I2 + (sinh(s) / s) * X
-    else
-        s = sqrt(-α)
-        return cos(s) * I2 + (sin(s) / s) * X
-    end
-end
-
-function bivec1tohalf(bivec::AbstractMatrix{T}) where {T<:Number}
-    RT = T <: Real ? T : real(T)
-    CT = Complex{RT}
-
-    coeffs = Vector{CT}(undef, 6)
-
-    for i in 1:3
-        coeffs[i] = CT(tr(bivec * Jvec(RT)[i]))
-    end
-    for i in 4:6
-        coeffs[i] = -CT(tr(bivec * Jvec(RT)[i]))
-    end
-
-    coeffs .*= inv(RT(2))
-
-    M = zeros(CT, 2, 2)
-    for i in 1:6
-        M .+= coeffs[i] .* CT.(jjvec(RT)[i])
-    end
-
-    return M
 end
 
 function sl2c_from_so13(Λ::AbstractMatrix{T}, sgndet::Int) where {T<:Real}
@@ -317,8 +265,7 @@ function sl2c_from_so13(Λ::AbstractMatrix{T}, sgndet::Int) where {T<:Real}
         Ω = log(Λ)
     end
     # -------------------------------------------------
-    # 2. Convert so(1,3) bivector → sl(2,C)
-    #    You already use this map everywhere else
+    # 2. Convert so(1,3) bivector → sl(2,C) using the shared algebra map.
     # -------------------------------------------------
     X = bivec1tohalf(Ω)   # 2×2 Complex{T}
 
@@ -326,7 +273,7 @@ function sl2c_from_so13(Λ::AbstractMatrix{T}, sgndet::Int) where {T<:Real}
     # 3. Exponentiate
     # -------------------------------------------------
     if T == BigFloat
-        g = T(sgndet) * exp_sl2(X)
+        g = T(sgndet) * exp2x2_from_square(one(T), X)
     else 
         g = T(sgndet) * exp(X)
     end
@@ -352,7 +299,6 @@ function build_SL2C_all(sl2ctest, solso13_new, sgndet, Tetchange)
     for i in 1:nbdy
         for j in 1:ntets
             if [i,j] in Tset
-                # println([i,j])
                 out[i][j] = sl2c_from_so13(solso13_new[i][j], sgndet[i][j])
             else
                 out[i][j] = sl2ctest[i][j]
@@ -370,10 +316,14 @@ build_sl2cchange(sl2ctest, sl2c_new) =
     [[inv(sl2ctest[i][j]) * sl2c_new[i][j] for j in eachindex(sl2c_new[i])]
      for i in eachindex(sl2c_new)]
 
-transform_bivec(bdybivec55stest, sl2cchange) =
-    [[ [inv(sl2cchange[i][j]) * B * sl2cchange[i][j] for B in bdybivec55stest[i][j]]
-       for j in eachindex(bdybivec55stest[i])]
-     for i in eachindex(bdybivec55stest)]
+function transform_bivec(bdybivec55stest, sl2cchange)
+    return [[
+        let change = sl2cchange[i][j], change_inv = inv(change)
+            [change_inv * B * change for B in bdybivec55stest[i][j]]
+        end
+        for j in eachindex(bdybivec55stest[i])
+    ] for i in eachindex(bdybivec55stest)]
+end
 
 # ============================================================
 # 16. update SL2C
@@ -417,7 +367,9 @@ end
 # ============================================================
 # 18. SU from bivec
 # ============================================================
-function build_su_from_bivec(bdybivec55stest2, sgndet, tetareasign, tetn0)
+# The tetrahedron n0 signs are needed by the subsequent xi construction,
+# but do not enter the SU(2)/SU(1,1) matrices themselves.
+function build_su_from_bivec(bdybivec55stest2, sgndet, tetareasign)
     nbdy  = length(bdybivec55stest2)
     ntets = length(bdybivec55stest2[1])
     T = real(eltype(bdybivec55stest2[1][1][1]))
@@ -516,7 +468,7 @@ function run_face_xi_matching(geom; sector::Symbol)
     # --------------------------------------------------------
     # Step 14: Build new SU(2)/SU(1,1)
     # --------------------------------------------------------
-    bdysu_new = build_su_from_bivec(bdybivec55stest_new, sgndet, tetareasign, tetn0_new)
+    bdysu_new = build_su_from_bivec(bdybivec55stest_new, sgndet, tetareasign)
 
     # --------------------------------------------------------
     # Step 15: Build xi
@@ -533,16 +485,6 @@ function run_face_xi_matching(geom; sector::Symbol)
         geom.simplex[i].bdysu         = bdysu_new[i]
         geom.simplex[i].solgso13   = solso13_new[i]
     end
-    # println("  SL(2,C) matrices updated:      ✓")
-    # println("  SL(2,C) parity matrices updated: ✓")
-    # println("  Boundary bivectors updated:    ✓")
-    # println("  boundary ξ variables updated:  ✓")
-    # println("  SU(2)/SU(1,1) elements updated: ✓")
-    # println("  SO(1,3) frames corrected:       ✓\n")
-    # --------------------------------------------------------
-    # FINAL return 
-    # --------------------------------------------------------
-    # return (Tetchange, SO3, TetsReflection, nab4, nab4_flip, nab1, SO4, solso13_new, sl2c_new, sl2cchange, bdybivec55stest_new, tetn0_new, bdysu_new, xi_new, sl2c_new_new)
     return nothing
 end
 

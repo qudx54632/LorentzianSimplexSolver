@@ -1,15 +1,18 @@
 module FourSimplexConnectivity
 
 using Combinatorics
+using ..SimplexGeometry: build_tets, build_tetfaces
 
-export build_global_connectivity, build_tets_all, build_tetfaces_all
+export build_global_connectivity,
+       build_tets_all,
+       build_tetfaces_all,
+       build_single_simplex_boundary_faces
 
 # ------------------------------------------------------------
 # Build tetrahedra (4-subsets) for each 4-simplex
 # ------------------------------------------------------------
 function build_tets_all(four_simplices)
-    return [ [collect(a) for a in combinations(fs, 4)]
-             for fs in four_simplices ]
+    return [build_tets(simplex) for simplex in four_simplices]
 end
 
 # ------------------------------------------------------------
@@ -17,25 +20,7 @@ end
 # Insert dummy face at index j
 # ------------------------------------------------------------
 function build_tetfaces_all(Tets)
-    TetFaces0 = [
-        [ [collect(a) for a in combinations(Tets[i][j], 3)]
-          for j in 1:length(Tets[i]) ]
-        for i in eachindex(Tets)
-    ]
-
-    TetFaces = Vector{Vector{Vector{Vector{Int}}}}(undef, length(Tets))
-
-    for i in eachindex(Tets)
-        faces_i = Vector{Vector{Vector{Int}}}()
-        for j in 1:length(Tets[i])
-            faces = TetFaces0[i][j]
-            insert!(faces, j, [0,0,0])
-            push!(faces_i, faces)
-        end
-        TetFaces[i] = faces_i
-    end
-
-    return TetFaces
+    return [build_tetfaces(tets) for tets in Tets]
 end
 
 # ------------------------------------------------------------
@@ -133,27 +118,8 @@ function find_shared_tets_global(Tets)
 end
 
 # ------------------------------------------------------------
-# Helper: find positions of a value inside selectlinks
+# Order bulk faces along each shared-tetrahedron chain.
 # ------------------------------------------------------------
-function find_positions_value(selectlinks, value)
-    pos = Vector{Vector{Int}}()
-    for i in eachindex(selectlinks)
-        for j in 1:2
-            for k in 1:2
-                if selectlinks[i][j][k] == value
-                    push!(pos, [i,j,k])
-                end
-            end
-        end
-    end
-    return pos
-end
-
-# ------------------------------------------------------------
-# Order bulk faces (Mathematica translation)
-# ------------------------------------------------------------
-using Combinatorics
-
 function orderBulk(FacesPosition, sharedTetsPos, k)
 
     faces = FacesPosition[k]
@@ -284,25 +250,23 @@ function orient_bulk_faces_all(OrderBulkFaces, kappa)
     return out
 end
 
+"""
+Build the ten oriented boundary-face pairs for a single 4-simplex. For the
+antisymmetric kappa matrix, the positive orientation is placed first, matching
+the global connectivity order.
+"""
+function build_single_simplex_boundary_faces(kappa)
+    ntet = length(kappa)
+    return [
+        kappa[i][j] == 1 ? [[1, i, j], [1, j, i]] : [[1, j, i], [1, i, j]]
+        for i in 1:ntet for j in i+1:ntet
+    ]
+end
+
 # ------------------------------------------------------------
-# SU(2) gauge-fix selection
+# SU(2) gauge-fix selection. Each simplex retains at least one
+# unfixed tetrahedron so the later SL(2,C) gauge choice remains valid.
 # ------------------------------------------------------------
-# function build_gauge_fix_sets(sharedTetsPos, sgndet)
-#     GaugeFixUpperTriangle = Vector{Vector{Int}}()
-#     oppositesl2c          = Vector{Vector{Int}}()
-
-#     for pair in sharedTetsPos
-#         s1, t1 = pair[1][1], pair[1][2]
-#         s2, t2 = pair[2][1], pair[2][2]
-
-#         if sgndet[s1][t1] == 1
-#             push!(GaugeFixUpperTriangle, [s1, t1])
-#             push!(oppositesl2c,          [s2, t2])
-#         end
-#     end
-
-#     return GaugeFixUpperTriangle, oppositesl2c
-# end
 function build_gauge_fix_sets(sharedTetsPos, sgndet; ntet=5)
 
     ns = length(sgndet)  # number of simplices
@@ -341,8 +305,6 @@ end
 # ------------------------------------------------------------
 # Build SU(1,1) gauge-fix triple sets
 # ------------------------------------------------------------
-# helper must exist BEFORE this function
-# @inline key2(v::Vector{Int}) = string(v[1], "_", v[2])
 @inline key2(v::Vector{Int}) = (v[1], v[2])
 
 function build_timelike_data(sharedTetsPos, sgndet, tetareasign)

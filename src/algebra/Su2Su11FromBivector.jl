@@ -54,7 +54,6 @@ tr4(A) = real(tr(A * A))
 
 function _normalize_bivec(B::AbstractMatrix{T}) where {T<:Real}
     val = abs(tr4(B) / T(2))
-    # val > T(get_tolerance()) || error("normalize_bivec: degenerate bivector")
     return B / sqrt(val)
 end
 

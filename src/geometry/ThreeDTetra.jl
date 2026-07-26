@@ -2,12 +2,11 @@ module ThreeDTetra
 
 using LinearAlgebra
 using ..PrecisionUtils: get_tolerance
-using ..SpinAlgebra: Params
+using ..SpinAlgebra: eta
 using ..LorentzGroup: bivec1tohalf
 
 export ε, get3dtet, get3dvec, threetofour, getbivec, getbivec2d
 
-η(::Type{T}) where {T<:Real} = Params{T}().eta
 # ----------------------------------------------------------
 # Levi-Civita tensor ε_{ijkl}
 # ----------------------------------------------------------
@@ -109,8 +108,9 @@ end
 # ----------------------------------------------------------
 function getbivec(n1::AbstractVector{T}, n2::AbstractVector{T}) where {T<:Real}
     B = zeros(T, 4, 4)
-    ηv1 = η(T) * n1
-    ηv2 = η(T) * n2
+    metric = eta(T)
+    ηv1 = metric * n1
+    ηv2 = metric * n2
 
     half = one(T) / T(2)
 
@@ -122,7 +122,7 @@ function getbivec(n1::AbstractVector{T}, n2::AbstractVector{T}) where {T<:Real}
         B[i, j] = half * s
     end
 
-    return B * η(T)
+    return B * metric
 end
 
 # ----------------------------------------------------------
@@ -132,8 +132,10 @@ end
 #   3. convert to SL(2,C) via bivec1tohalf
 # ----------------------------------------------------------
 function getbivec2d(n1::AbstractVector{T}, n2::AbstractVector{T}) where {T<:Real}
-    B = getbivec(n1, n2)
+    return getbivec2d(getbivec(n1, n2))
+end
 
+function getbivec2d(B::AbstractMatrix{T}) where {T<:Real}
     val = real(LinearAlgebra.tr(B * B)) / T(2)
     Bnorm = B / sqrt(abs(val))
 

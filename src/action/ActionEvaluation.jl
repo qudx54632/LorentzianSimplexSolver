@@ -1,9 +1,9 @@
 module ActionEvaluation
 
 using SymEngine
-using DoubleFloats
+using DoubleFloats: Double64
 
-export build_value_dict, eval_symbolic
+export build_value_dict, eval_symbolic, to_complex_T
 
 
 # ------------------------------------------------------------
@@ -11,43 +11,26 @@ export build_value_dict, eval_symbolic
 # ------------------------------------------------------------
 @inline val_basic(x) = x isa Double64 ? Basic(string(x)) : Basic(x)
 
+function add_value_group!(values_dict, labels, values, flags, gamma_denominator)
+    @assert length(labels) == length(values) == length(flags)
+
+    for i in eachindex(labels)
+        value = val_basic(values[i])
+        values_dict[labels[i]] = flags[i] ? value / gamma_denominator : value
+    end
+
+    return values_dict
+end
+
 function build_value_dict(sd, γsym::Basic; γval=nothing)
     d = Dict{Basic,Basic}()
+    gamma_denominator = γval === nothing ? γsym : val_basic(γval)
 
-    for i in eachindex(sd.labels_vars)
-        sym = sd.labels_vars[i]
-        val = sd.flags_vars[i] ?
-            (γval === nothing ?
-                val_basic(sd.values_vars[i]) / γsym :
-                val_basic(sd.values_vars[i]) / val_basic(γval)) :
-            val_basic(sd.values_vars[i])
+    add_value_group!(d, sd.labels_vars, sd.values_vars, sd.flags_vars, gamma_denominator)
+    add_value_group!(d, sd.labels_bdry, sd.values_bdry, sd.flags_bdry, gamma_denominator)
+    add_value_group!(d, sd.labels_η, sd.values_η, sd.flags_η, gamma_denominator)
 
-        d[sym] = val
-    end
-
-    for i in eachindex(sd.labels_bdry)
-        sym = sd.labels_bdry[i]
-        val = sd.flags_bdry[i] ?
-            (γval === nothing ?
-                val_basic(sd.values_bdry[i]) / γsym :
-                val_basic(sd.values_bdry[i]) / val_basic(γval)) :
-            val_basic(sd.values_bdry[i])
-
-        d[sym] = val
-    end
-
-    for i in eachindex(sd.labels_η)
-        sym = sd.labels_η[i]
-        val = sd.flags_η[i] ?
-            (γval === nothing ?
-                val_basic(sd.values_η[i]) / γsym :
-                val_basic(sd.values_η[i]) / val_basic(γval)) :
-            val_basic(sd.values_η[i])
-
-        d[sym] = val
-    end
-
-    d[γsym] = γval === nothing ? γsym : val_basic(γval)
+    d[γsym] = gamma_denominator
 
     return d
 end
@@ -63,6 +46,23 @@ eval_symbolic(x::Number, vals) = x
 
 function eval_symbolic(A::AbstractArray, vals)
     return map(x -> eval_symbolic(x, vals), A)
+end
+
+# SymEngine numbers need an explicit conversion so Float64 and BigFloat
+# workflows keep the scalar type selected in PrecisionUtils.
+@inline function to_T(x, ::Type{T}) where {T<:Real}
+    x isa Real && return T(x)
+
+    sx = string(x)
+    try
+        return parse(T, sx)
+    catch
+        error("Cannot convert to $T: $sx (type = $(typeof(x)))")
+    end
+end
+
+@inline function to_complex_T(x, ::Type{T}) where {T<:Real}
+    return complex(to_T(real(x), T), to_T(imag(x), T))
 end
 
 end

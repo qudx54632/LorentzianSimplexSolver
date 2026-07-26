@@ -2,6 +2,7 @@ module DefineSymbols
 
 using ..CriticalPoints: compute_bdy_critical_data
 using ..PrecisionUtils: get_tolerance
+using ..FourSimplexConnectivity: build_single_simplex_boundary_faces
 
 using SymEngine
 
@@ -31,7 +32,7 @@ end
 # g_mat is length ns*5, ordered by a=1..ns, b=1..5
 # ------------------------------------------------------------
 """
-    compute_gspecialpos(gdataof, GaugeTet; tol=1e-12)
+    compute_gspecialpos(gdataof, GaugeTet)
 
 Return list [k,i] where gdataof[k][i][1,1] ≈ 0 and not in GaugeTet.
 """
@@ -194,7 +195,7 @@ end
 # ------------------------------------------------------------
 # xi variables (zeta)
 # sgndet[a][i], tetareasign[a][i][j], tetn0sign[a][i][j]
-# xi_mat[a][i][j] is always Py[*,*] length 2, diagonal is [0,0]
+# xi_mat[a][i][j] is a two-component Basic vector; diagonal entries are zero.
 # ------------------------------------------------------------
 function apply_shared_tets_to_xi!(xi_expr, sharedTetsPos)
     ntet = length(xi_expr[1][1])  # should be 5
@@ -215,7 +216,7 @@ function apply_shared_tets_to_xi!(xi_expr, sharedTetsPos)
 
         @assert length(row_wo_self) == ntet - 1
 
-        # build destination row with [1,0] inserted at t2
+        # Reinsert the diagonal zero entry at the destination tetrahedron index.
         row_dst = Vector{Vector{Basic}}(undef, ntet)
         k = 1
         for j in 1:ntet
@@ -497,7 +498,9 @@ function run_define_variables(geom)
     tetareasign  = [geom.simplex[s].tetareasign for s in 1:ns]
     tetn0sign    = [geom.simplex[s].tetn0sign   for s in 1:ns]
 
+    # Cache this data for SolveVars, which consumes the same numerical values.
     critical_data = compute_bdy_critical_data(geom)
+    geom.crit[:bdy_critical_data] = critical_data
     gdataof = critical_data.gdataof
     zdataf  = critical_data.zdataf
 
@@ -521,24 +524,10 @@ function run_define_variables(geom)
         GaugeFixUpperTriangle = Vector{Vector{Int}}()
         OrderBulkFaces        = Vector{Vector{Vector{Int}}}()
         sharedTetsPos         = Vector{Vector{Vector{Int}}}()
-        # every (1,i,j), i≠j is a boundary face with a trivial chain
-        OrderBDryFaces = Vector{Vector{Vector{Int}}}()
         Gaugetimelike = Vector{Vector{Vector{Int}}}()
         Gaugespacelike = Vector{Vector{Vector{Int}}}()
         timelikeTetsSharingPos = Vector{Vector{Vector{Int}}}()
-
-        for i in 1:ntet, j in i+1:ntet
-            # two oriented faces
-            fwd = [1, i, j]
-            bwd = [1, j, i]
-
-            # kappa-positive one goes first
-            if kappa_all[1][i][j] == 1
-                push!(OrderBDryFaces, [fwd, bwd])
-            else
-                push!(OrderBDryFaces, [bwd, fwd])
-            end
-        end
+        OrderBDryFaces = build_single_simplex_boundary_faces(kappa_all[1])
     end
 
     gspecialPos = compute_gspecialpos(gdataof, GaugeTet)

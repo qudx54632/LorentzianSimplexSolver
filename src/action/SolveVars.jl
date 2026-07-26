@@ -1,16 +1,14 @@
 module SolveVars
 
 using ..CriticalPoints: compute_bdy_critical_data
-using ..DefineSymbols: collect_bdry_symbols, collect_varias_symbols
+using ..DefineSymbols: collect_bdry_symbols
 using ..DefineAction: γsym
 
 using SymEngine
 
 export run_solver, SolveData
 
-# ============================================================
-# Container for solver output (Julia-only values)
-# ============================================================
+# The flags mark area-like values that build_value_dict scales by 1/gamma.
 struct SolveData{T<:Real}
     labels_vars :: Vector{Basic}
     values_vars :: Vector{T}
@@ -25,11 +23,46 @@ struct SolveData{T<:Real}
     flags_η     :: BitVector
 end
 
-# ============================================================
-# Helper: extract unique symbol from a SymPy expr
-# ============================================================
-@inline symkey(x::Basic) = string(x)
+struct SolutionAccumulator{T<:Real}
+    labels::Vector{Basic}
+    values::Vector{T}
+    flags::BitVector
+    seen::Set{Basic}
+end
 
+SolutionAccumulator(::Type{T}) where {T<:Real} =
+    SolutionAccumulator{T}(Basic[], T[], BitVector(), Set{Basic}())
+
+function append_unique!(acc::SolutionAccumulator{T}, label::Basic, value::T, flag::Bool) where {T<:Real}
+    label in acc.seen && return acc
+    push!(acc.seen, label)
+    push!(acc.labels, label)
+    push!(acc.values, value)
+    push!(acc.flags, flag)
+    return acc
+end
+
+function append_unique!(acc::SolutionAccumulator, labels, values, flags)
+    @assert length(labels) == length(values) == length(flags)
+    for i in eachindex(labels)
+        append_unique!(acc, labels[i], values[i], flags[i])
+    end
+    return acc
+end
+
+# Solver outputs use one ordered partition for integration variables and one
+# for boundary data. The accumulator preserves first occurrence in each set.
+function append_partitioned!(variables, boundary, boundary_symbols, labels, values, flags)
+    @assert length(labels) == length(values) == length(flags)
+    for i in eachindex(labels)
+        destination = labels[i] in boundary_symbols ? boundary : variables
+        append_unique!(destination, labels[i], values[i], flags[i])
+    end
+    return nothing
+end
+
+# Return the free symbols in deterministic order so numerical values align
+# with the symbolic parameterization used by DefineSymbols.
 function vars_in_expr(expr)
     if isa(expr, Basic)
         return sort(collect(free_symbols(expr)), by=string)
@@ -43,65 +76,6 @@ function vars_in_expr(expr)
     else
         return Basic[]
     end
-end
-
-function get_sym(expr)
-    syms = vars_in_expr(expr)
-
-    if isempty(syms)
-        error("No free symbols in $expr")
-    elseif length(syms) == 1
-        return first(syms)
-    else
-        error("Expected one symbol, got $(syms) in $expr")
-    end
-end
-
-function get_single_var(expr)
-    vars = vars_in_expr(expr)
-    length(vars) == 1 || error("Expected 1 variable in $expr, got $vars")
-    return vars[1]
-end
-
-# ============================================================
-# Helper: distribute labels/values/flags into vars or bdry
-# ============================================================
-function distribute!(labels_vars::Vector{Basic}, values_vars::Vector{T}, flags_vars::BitVector,
-                     labels_bdry::Vector{Basic}, values_bdry::Vector{T}, flags_bdry::BitVector,
-                     seen_vars::Set{String}, seen_bdry::Set{String},
-                     L::Vector{Basic}, V::Vector{T}, F::BitVector,
-                     bdry_keys::Set{String}, var_keys::Set{String}) where {T<:Real}
-
-    @assert length(L) == length(V) == length(F)
-
-    for k in eachindex(L)
-        key = symkey(L[k])
-
-        if key in bdry_keys
-            key in seen_bdry && continue
-            push!(seen_bdry, key)
-            push!(labels_bdry, L[k])
-            push!(values_bdry, V[k])
-            push!(flags_bdry,  F[k])
-
-        elseif key in var_keys
-            key in seen_vars && continue
-            push!(seen_vars, key)
-            push!(labels_vars, L[k])
-            push!(values_vars, V[k])
-            push!(flags_vars,  F[k])
-
-        else
-            @warn "Symbol not classified as bdry or vars; defaulting to vars" symbol=key
-            key in seen_vars && continue
-            push!(seen_vars, key)
-            push!(labels_vars, L[k])
-            push!(values_vars, V[k])
-            push!(flags_vars,  F[k])
-        end
-    end
-
-    return nothing
 end
 
 # ============================================================
@@ -318,34 +292,17 @@ function run_solver(geom)
     ns, ntet = length(g_mat), 5
     T = eltype(eltype(eltype(geom.simplex[1].areas)))
 
-    # -------------------------------
-    # OUTPUT CONTAINERS
-    # -------------------------------
-    labels_vars = Basic[]
-    values_vars = T[]
-    flags_vars  = BitVector()
-
-    labels_bdry = Basic[]
-    values_bdry = T[]
-    flags_bdry  = BitVector()
-
-    labels_η = Basic[]
-    values_η = T[]
-    flags_η  = BitVector()
-
-    # -------------------------------
-    # classification sets (NO string!)
-    # -------------------------------
+    variables = SolutionAccumulator(T)
+    boundary = SolutionAccumulator(T)
+    eta_values = SolutionAccumulator(T)
     bdry_set = Set(collect_bdry_symbols(geom))
-
-    seen_vars = Set{Basic}()
-    seen_bdry = Set{Basic}()
-    seen_η    = Set{Basic}()
 
     # -------------------------------
     # numerical data
     # -------------------------------
-    data = compute_bdy_critical_data(geom)
+    data = get!(geom.crit, :bdy_critical_data) do
+        compute_bdy_critical_data(geom)
+    end
     gdataof   = data.gdataof
     zdataf    = data.zdataf
     areadataf = data.areadataf
@@ -376,24 +333,7 @@ function run_solver(geom)
             key_ai in gupper_set   ? solve_g_upper(g_mat[a][i], gdataof[a][i]) :
                                      solve_g_var(g_mat[a][i], gdataof[a][i])
 
-        for k in eachindex(L)
-            sym = L[k]
-
-            if sym in bdry_set
-                sym in seen_bdry && continue
-                push!(seen_bdry, sym)
-                push!(labels_bdry, sym)
-                push!(values_bdry, V[k])
-                push!(flags_bdry,  F[k])
-
-            else
-                sym in seen_vars && continue
-                push!(seen_vars, sym)
-                push!(labels_vars, sym)
-                push!(values_vars, V[k])
-                push!(flags_vars,  F[k])
-            end
-        end
+        append_partitioned!(variables, boundary, bdry_set, L, V, F)
 
         # -------- faces --------
         for j in 1:ntet
@@ -401,85 +341,25 @@ function run_solver(geom)
 
             # xi
             L, V, F = solve_xi_var(xi_mat[a][i][j], xisoln[a][i][j])
-            for k in eachindex(L)
-                sym = L[k]
-
-                if sym in bdry_set
-                    sym in seen_bdry && continue
-                    push!(seen_bdry, sym)
-                    push!(labels_bdry, sym)
-                    push!(values_bdry, V[k])
-                    push!(flags_bdry,  F[k])
-                else
-                    sym in seen_vars && continue
-                    push!(seen_vars, sym)
-                    push!(labels_vars, sym)
-                    push!(values_vars, V[k])
-                    push!(flags_vars,  F[k])
-                end
-            end
+            append_partitioned!(variables, boundary, bdry_set, L, V, F)
 
             # z
             if kappa[a][i][j] == 1
                 L, V, F = solve_z_var(z_mat[a][i][j], zdataf[a][i][j])
-                for k in eachindex(L)
-                    sym = L[k]
-
-                    if sym in bdry_set
-                        sym in seen_bdry && continue
-                        push!(seen_bdry, sym)
-                        push!(labels_bdry, sym)
-                        push!(values_bdry, V[k])
-                        push!(flags_bdry,  F[k])
-                    else
-                        sym in seen_vars && continue
-                        push!(seen_vars, sym)
-                        push!(labels_vars, sym)
-                        push!(values_vars, V[k])
-                        push!(flags_vars,  F[k])
-                    end
-                end
+                append_partitioned!(variables, boundary, bdry_set, L, V, F)
             end
 
-            # η (separate)
+            # Eta is retained both as its own group and in the full partition.
             L, V, F = solve_η_var(η_mat[a][i][j], areadataf[a][i][j], tetareasign[a][i][j])
-            # @show a, i, j, L, V, F
-
-            for k in eachindex(L)
-                sym = L[k]
-                if !(sym in seen_η)
-                    push!(seen_η, sym)
-                    push!(labels_η, sym)
-                    push!(values_η, V[k])
-                    push!(flags_η,  F[k])
-                end
-
-                # -------------------------
-                # ALSO add to vars (NEW)
-                # -------------------------
-                if sym in bdry_set
-                    if !(sym in seen_bdry)
-                        push!(seen_bdry, sym)
-                        push!(labels_bdry, sym)
-                        push!(values_bdry, V[k])
-                        push!(flags_bdry,  F[k])
-                    end
-                else
-                    if !(sym in seen_vars)
-                        push!(seen_vars, sym)
-                        push!(labels_vars, sym)
-                        push!(values_vars, V[k])
-                        push!(flags_vars,  F[k])
-                    end
-                end
-            end
+            append_unique!(eta_values, L, V, F)
+            append_partitioned!(variables, boundary, bdry_set, L, V, F)
         end
     end
 
     return SolveData(
-        labels_vars, values_vars, flags_vars,
-        labels_bdry, values_bdry, flags_bdry,
-        labels_η,    values_η,    flags_η
+        variables.labels, variables.values, variables.flags,
+        boundary.labels, boundary.values, boundary.flags,
+        eta_values.labels, eta_values.values, eta_values.flags
     ), γsym()
 end
 

@@ -2,6 +2,7 @@ module DefineAction
 
 using LinearAlgebra
 using SymEngine
+using ..FourSimplexConnectivity: build_single_simplex_boundary_faces
 
 export γsym, compute_action
 
@@ -23,7 +24,6 @@ end
 @inline herm(v) = transpose(map(sconj_real, col(v)))  
 
 @inline slog(x) = SymEngine.log(x)
-@inline ssqrt(x) = SymEngine.sqrt(x)
 
 @inline symzero(x) = x - x
 @inline symone(x) = symzero(x) + 1
@@ -121,8 +121,6 @@ function bulk_action(gvariablesall, zvariablesall, ηlabelsMat, kappaMat, OrderB
                             (κlist[i], κlist[i+1]); γ=γ)
         end
 
-        # logEh = slog(prodEh)
-        # Sh += -ηval * (1 - prodEh)
         logEh = slog(prodEh)
         Sh += ηval * logEh
     end
@@ -146,7 +144,7 @@ function compute_action(geom; γ=γsym())
         Sh = bulk_action(gvariablesall, zvariablesall, ηlabelsMat, kappaMat, OrderBulkFaces; γ=γ)
         return Sb + Sh
     else 
-        OrderBDryFaces = [kappaMat[1][i][j]== 1 ? [[1, i, j], [1, j, i]] : [[1, j, i], [1, i, j]] for i in 1:5 for j in 1:5 if i < j]
+        OrderBDryFaces = build_single_simplex_boundary_faces(kappaMat[1])
         Sb = boundary_action(gvariablesall, zvariablesall, ηlabelsMat, zetabdryall, kappaMat, OrderBDryFaces; γ=γ)
 
         return Sb

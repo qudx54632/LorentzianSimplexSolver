@@ -2,23 +2,18 @@ module Volume
 
 using LinearAlgebra
 using ..PrecisionUtils: get_tolerance
-using ..SpinAlgebra: Params
+using ..SpinAlgebra: eta
 
 export distance_sq, V2sq, V3sq, V4sq,
        CM2D, CM3D, CM4D,
        compute_all_areas, compute_area_signs
 
 # -------------------------------------------------------------
-# Minkowski metric (-,+,+,+) for scalar type T
-# -------------------------------------------------------------
-η(::Type{T}) where {T<:Real} = Params{T}().eta
-
-# -------------------------------------------------------------
 # Minkowski squared distance between points P1, P2
 # -------------------------------------------------------------
 function distance_sq(P1::AbstractVector{T},
                      P2::AbstractVector{T}) where {T<:Real}
-    ((P1 - P2)' * η(T) * (P1 - P2))[1]
+    ((P1 - P2)' * eta(T) * (P1 - P2))[1]
 end
 
 # =============================================================

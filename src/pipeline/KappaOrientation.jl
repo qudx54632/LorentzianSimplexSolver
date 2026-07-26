@@ -1,29 +1,8 @@
 module KappaOrientation
 
-using Combinatorics
+using ..SimplexGeometry: build_tets, build_tetfaces
 
 export fix_kappa_signs!, build_tets, build_tetfaces
-
-# ------------------------------------------------------------
-# Build tetrahedra (4-subsets) of one 4-simplex
-# ------------------------------------------------------------
-function build_tets(four_simplex::Vector{Int})
-    return collect(combinations(four_simplex, 4))
-end
-
-# ------------------------------------------------------------
-# Build faces (triangles) for each tetrahedron
-# Insert dummy [0,0,0] at position j
-# ------------------------------------------------------------
-function build_tetfaces(tets::Vector{Vector{Int}})
-    out = Vector{Vector{Vector{Int}}}(undef, length(tets))
-    for j in 1:length(tets)
-        faces = collect(combinations(tets[j], 3))
-        insert!(faces, j, [0, 0, 0])
-        out[j] = faces
-    end
-    return out
-end
 
 # ------------------------------------------------------------
 # Helper: remove diagonal j-th entry from a vector
@@ -132,8 +111,6 @@ function fix_kappa_signs!(four_simplices, geom)
                 end
             end
         end
-
-        # println(savedTet)
     end
 
     # Write the final κ back into geom

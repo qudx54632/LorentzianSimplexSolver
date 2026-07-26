@@ -2,19 +2,17 @@ module TetraNormals
 
 using LinearAlgebra
 using Combinatorics
-using ..SpinAlgebra: Params
+using ..SpinAlgebra: eta
 using ..SimplexGeometry: edge_or
 using ..PrecisionUtils: get_tolerance
 
 export minkowski_norm, tet_normal, get4dnormal, compute_edgevec
 
-η(::Type{T}) where {T<:Real} = Params{T}().eta
-
 # -------------------------------------------------------------
 # Minkowski inner product  (-,+,+,+)
 # -------------------------------------------------------------
 minkowski_norm(a::AbstractVector{T}, b::AbstractVector{T}) where {T<:Real} =
-    (a' * η(T) * b)[1]
+    (a' * eta(T) * b)[1]
 
 # -----------------------------------------------------------
 #  list of edge vectors for each tetrahedron in the 4-simplex
@@ -42,8 +40,10 @@ end
 # -------------------------------------------------------------
 function tet_normal(edgetet::Vector{Vector{T}}) where {T<:Real}
 
+    metric = eta(T)
+
     # Build covariant edge rows: η * e
-    E = hcat((η(T) * e for e in edgetet[1:3])...)
+    E = hcat((metric * e for e in edgetet[1:3])...)
 
     # Compute normal via Levi-Civita (exact)
     n = Vector{T}(undef, 4)
@@ -54,8 +54,7 @@ function tet_normal(edgetet::Vector{Vector{T}}) where {T<:Real}
     end
 
     # Minkowski norm
-    normsq = (n' * η(T) * n)[1]
-    # abs(normsq) > get_tolerance() || error("Degenerate tetrahedron")
+    normsq = (n' * metric * n)[1]
 
     # Normalize (keep sign!)
     n ./= sqrt(abs(normsq))
@@ -94,8 +93,10 @@ end
 
 
 function get4dnormal(bdypoints::Vector{<:AbstractVector{T}}) where {T<:Real}
+    return get4dnormal(bdypoints, compute_edgevec(bdypoints))
+end
 
-    edgetet_all = compute_edgevec(bdypoints)
+function get4dnormal(bdypoints::Vector{<:AbstractVector{T}}, edgetet_all) where {T<:Real}
     # Step 1: unsigned normals
     normals_unsigned = [tet_normal(edges) for edges in edgetet_all]
 
@@ -104,8 +105,8 @@ function get4dnormal(bdypoints::Vector{<:AbstractVector{T}}) where {T<:Real}
     centers = [sum(tet) / T(4) for tet in tets]
 
     # Step 3: shifted test points
-    eps = sqrt(T(get_tolerance()))
-    pert_plus = [centers[i] .+ eps * normals_unsigned[i] for i in 1:5]
+    orientation_step = sqrt(T(get_tolerance()))
+    pert_plus = [centers[i] .+ orientation_step * normals_unsigned[i] for i in 1:5]
 
     normals = Vector{Vector{T}}(undef, 5)
 

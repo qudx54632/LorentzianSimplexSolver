@@ -3,7 +3,6 @@ module GeometryPipeline
 using LinearAlgebra
 using Combinatorics
 
-using ..PrecisionUtils: get_tolerance
 using ..GeometryTypes: GeometryDataset
 
 using ..SimplexGeometry: eto_f, edge_or
@@ -27,8 +26,6 @@ They must all have the same scalar type `T` (Float64 or BigFloat).
 """
 function run_geometry_pipeline(bdypoints::Vector{<:AbstractVector{T}}) where {T<:Real}
 
-    tol = T(get_tolerance())
-
     # ------------------------------------------------------------
     # Basic counts: bdypoints are VERTICES (must be 5)
     # ------------------------------------------------------------
@@ -45,7 +42,7 @@ function run_geometry_pipeline(bdypoints::Vector{<:AbstractVector{T}}) where {T<
     # ------------------------------------------------------------
     # 2. 4D tetrahedron normals (5 normals)
     # ------------------------------------------------------------
-    tetnormalvec = get4dnormal(bdypoints)  # Vector{Vector{T}}
+    tetnormalvec = get4dnormal(bdypoints, edgevec)  # Vector{Vector{T}}
 
     # ------------------------------------------------------------
     # 3. SO(1,3) group elements for each tetra normal
@@ -83,10 +80,7 @@ function run_geometry_pipeline(bdypoints::Vector{<:AbstractVector{T}}) where {T<
     Id4 = Matrix{T}(I, 4, 4)
     bdybivec4d55 = [insert!(copy(bdybivec4d[i]), i, Id4) for i in 1:Ntet]
 
-    bdybivec54 = [
-        [getbivec2d(threeto4dedgevec[i][p[1]], threeto4dedgevec[i][p[2]]) for p in eto_f]
-        for i in 1:Ntet
-    ]
+    bdybivec54 = [[getbivec2d(B) for B in row] for row in bdybivec4d]
 
     Id2 = Matrix{Complex{T}}(I, 2, 2)
     bdybivec55 = [insert!(copy(bdybivec54[i]), i, Id2) for i in 1:Ntet]

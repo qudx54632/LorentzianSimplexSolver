@@ -135,12 +135,19 @@ println("Computing spinfoam action.")
 spinfoam = compute_spinfoam_action(geom, regge; gamma=gamma_value)
 display(spinfoam.action)
 
+dS = nothing
 if ask_yes_no("Check equations of motion?")
-    check_eom(spinfoam; gamma=gamma_value)
+    dS = check_eom(spinfoam; gamma=gamma_value)
 end
 
 if ask_yes_no("Compute Hessian?")
-    hessian = compute_hessian(geom, spinfoam; gamma=gamma_value, eigenvalues=true)
+    hessian = compute_hessian(
+        geom,
+        spinfoam;
+        gamma=gamma_value,
+        eom=dS,
+        eigenvalues=true,
+    )
     println("Hessian size: $(size(hessian.matrix))")
     println("Eigenvalues sorted by absolute value:")
     display(hessian.eigenvalues)
