@@ -65,7 +65,13 @@ function solve_phase(gvariablesall, zvariablesall, zetabdryall, kappaMat, OrderB
     return phase_solution
 end
 
-function compute_action_no_bdry_phase(geom, sd, dihedral_angles; γ=γsym())
+function compute_action_no_bdry_phase(
+    geom,
+    sd,
+    dihedral_angles;
+    γ=γsym(),
+    bulk_sum_form::Bool=true,
+)
     gvariablesall = geom.varias[:g_mat]
     zvariablesall = geom.varias[:z_mat]
     zetabdryall   = geom.varias[:xi_mat]
@@ -87,7 +93,7 @@ function compute_action_no_bdry_phase(geom, sd, dihedral_angles; γ=γsym())
         geom.varias[:xi_mat][k][i][j] = zetabdryall[k][i][j] * exp(_I[] * phase_sym)
     end
     
-    new_action_no_bdry_phase = compute_action(geom; γ)
+    new_action_no_bdry_phase = compute_action(geom; γ=γ, bulk_sum_form=bulk_sum_form)
     
     return new_action_no_bdry_phase, phase_soln
 end

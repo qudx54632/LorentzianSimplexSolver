@@ -159,7 +159,13 @@ function compute_regge_action(geom, simplices, vertex_coords)
     )
 end
 
-function compute_spinfoam_action(geom, regge::ReggeActionData; γ=nothing, gamma=nothing)
+function compute_spinfoam_action(
+    geom,
+    regge::ReggeActionData;
+    γ=nothing,
+    gamma=nothing,
+    bulk_sum_form::Bool=true,
+)
     T = validate_geometry_precision(geom)
     gamma_value = resolve_gamma(γ, gamma, nothing)
     PrecisionUtils.validate_number_precision(gamma_value, T, "gamma")
@@ -174,6 +180,7 @@ function compute_spinfoam_action(geom, regge::ReggeActionData; γ=nothing, gamma
             solve_data,
             regge.dihedral_angles;
             γ=gamma_symbol,
+            bulk_sum_form=bulk_sum_form,
         )
 
     action_no_phase = ActionEvaluation.eval_symbolic(action_symbols, phase_solution)

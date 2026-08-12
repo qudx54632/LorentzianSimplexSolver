@@ -101,7 +101,15 @@ function boundary_action(gvariablesall, zvariablesall, ηlabelsMat, zetabdryall,
     return Sb
 end
 
-function bulk_action(gvariablesall, zvariablesall, ηlabelsMat, kappaMat, OrderBulkFaces; γ=γsym())
+function bulk_action(
+    gvariablesall,
+    zvariablesall,
+    ηlabelsMat,
+    kappaMat,
+    OrderBulkFaces;
+    γ=γsym(),
+    bulk_sum_form::Bool=false,
+)
     seed = ηlabelsMat[1][1][2]
     Sh = symzero(seed)
 
@@ -121,14 +129,17 @@ function bulk_action(gvariablesall, zvariablesall, ηlabelsMat, kappaMat, OrderB
                             (κlist[i], κlist[i+1]); γ=γ)
         end
 
-        logEh = slog(prodEh)
-        Sh += ηval * logEh
+        if bulk_sum_form
+            Sh -= ηval * (symone(ηval) - prodEh)
+        else
+            Sh += ηval * slog(prodEh)
+        end
     end
 
     return Sh
 end
 
-function compute_action(geom; γ=γsym())
+function compute_action(geom; γ=γsym(), bulk_sum_form::Bool=false)
     gvariablesall = geom.varias[:g_mat]
     zvariablesall = geom.varias[:z_mat]
     zetabdryall   = geom.varias[:xi_mat]
@@ -141,7 +152,15 @@ function compute_action(geom; γ=γsym())
         OrderBulkFaces = geom.connectivity[1]["OrderBulkFaces"]
 
         Sb = boundary_action(gvariablesall, zvariablesall, ηlabelsMat, zetabdryall, kappaMat, OrderBDryFaces; γ=γ)
-        Sh = bulk_action(gvariablesall, zvariablesall, ηlabelsMat, kappaMat, OrderBulkFaces; γ=γ)
+        Sh = bulk_action(
+            gvariablesall,
+            zvariablesall,
+            ηlabelsMat,
+            kappaMat,
+            OrderBulkFaces;
+            γ=γ,
+            bulk_sum_form=bulk_sum_form,
+        )
         return Sb + Sh
     else 
         OrderBDryFaces = build_single_simplex_boundary_faces(kappaMat[1])
