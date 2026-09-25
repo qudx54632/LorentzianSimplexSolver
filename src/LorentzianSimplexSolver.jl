@@ -46,6 +46,7 @@ include("action/EOMs.jl")                           # equations of motion
 include("action/Hessian.jl")                       # Hessian matrix
 include("action/ReggeAction.jl")                    # Regge action
 include("action/DefineSFAction_no_phase.jl")        # boundary phase from dihedral angles
+include("complex_critical_point/ComplexCriticalPoints.jl") # complex critical points
 include("workflow/InteractiveWorkflow.jl")          # paper-friendly workflow API
 
 # ---------------- public API ----------------
@@ -58,6 +59,10 @@ export configure_precision!,
        compute_eom,
        check_eom,
        compute_hessian,
+       construct_curved_geometry,
+       prepare_complex_critical_point,
+       solve_complex_critical_point,
+       ComplexCriticalPointResult,
        ReggeActionData,
        SpinfoamActionData,
        HessianData
@@ -75,5 +80,11 @@ using .InteractiveWorkflow:
     ReggeActionData,
     SpinfoamActionData,
     HessianData
+
+using .ComplexCriticalPoints:
+    construct_curved_geometry,
+    prepare_complex_critical_point,
+    solve_complex_critical_point,
+    ComplexCriticalPointResult
 
 end

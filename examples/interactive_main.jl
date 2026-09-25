@@ -32,6 +32,19 @@ function choose_scalartype()
     error("Invalid choice. Please enter 1 or 2.")
 end
 
+function choose_geometry_type()
+    println("Choose geometry type:")
+    println("  1) Flat geometry: one global coordinate for each vertex")
+    println("  2) Curved geometry: local coordinates for each 4-simplex")
+    print("> ")
+
+    choice = strip(readline())
+    choice == "1" && return :flat
+    choice == "2" && return :curved
+
+    error("Invalid choice. Please enter 1 or 2.")
+end
+
 function parse_simplices(line::AbstractString)
     text = replace(strip(line), r"\s+" => "")
     startswith(text, "[[") && endswith(text, "]]") ||
@@ -80,6 +93,33 @@ function read_vertex_coordinates(vertices, ::Type{T}) where {T<:Real}
     return vertex_coords
 end
 
+function read_local_vertex_coordinates(simplices, ::Type{T}) where {T<:Real}
+    println()
+    println("Enter five local vertex coordinates for every 4-simplex.")
+    println("Format: t,x,y,z")
+
+    vertices_for_each_simplex = Vector{Vector{Vector{T}}}()
+    for k in eachindex(simplices)
+        println()
+        println("4-simplex $k: $(simplices[k])")
+        local_coordinates = Vector{Vector{T}}()
+
+        for vertex in simplices[k]
+            print("[$vertex] ")
+            coordinates = LSS.PrecisionUtils.parse_numeric_line(
+                strip(readline()), T,
+            )
+            length(coordinates) == 4 ||
+                error("Vertex $vertex: expected 4 numbers, got $(length(coordinates)).")
+            push!(local_coordinates, coordinates)
+        end
+
+        push!(vertices_for_each_simplex, local_coordinates)
+    end
+
+    return vertices_for_each_simplex
+end
+
 function read_gamma(::Type{T}) where {T<:Real}
     println()
     print("Enter gamma: ")
@@ -91,7 +131,10 @@ end
 println("========================================")
 println(" Spinfoam / Regge Interactive Driver")
 println("========================================")
+println("Julia version: ", VERSION)
+println("Package source: ", pathof(LorentzianSimplexSolver))
 
+geometry_type = choose_geometry_type()
 ScalarT = choose_scalartype()
 tol = configure_precision!(ScalarT)
 
@@ -105,12 +148,20 @@ vertices = sort(unique(Iterators.flatten(simplices)))
 println()
 println("Detected $(length(simplices)) simplices with $(length(vertices)) unique vertices.")
 
-vertex_coords = read_vertex_coordinates(vertices, ScalarT)
+if geometry_type == :flat
+    geometry_input = read_vertex_coordinates(vertices, ScalarT)
+else
+    geometry_input = read_local_vertex_coordinates(simplices, ScalarT)
+end
 gamma_value = read_gamma(ScalarT)
 
 println()
 println("Building geometry.")
-geom = construct_geometry(simplices, vertex_coords; verbose=true)
+if geometry_type == :flat
+    geom = construct_geometry(simplices, geometry_input; verbose=true)
+else
+    geom = construct_curved_geometry(geometry_input; verbose=true)
+end
 
 if ask_yes_no("Check simplex consistency?")
     check_simplex_consistency(geom)
@@ -127,17 +178,51 @@ end
 
 println()
 println("Computing Regge action.")
-regge = compute_regge_action(geom, simplices, vertex_coords)
+regge = compute_regge_action(geom, simplices, geometry_input)
 display(regge.iregge)
 
 println()
 println("Computing spinfoam action.")
-spinfoam = compute_spinfoam_action(geom, regge; gamma=gamma_value)
+if geometry_type == :flat
+    spinfoam = compute_spinfoam_action(geom, regge; gamma=gamma_value)
+else
+    spinfoam = compute_spinfoam_action(
+        geom,
+        regge;
+        gamma=gamma_value,
+        bulk_sum_form=false,
+    )
+end
 display(spinfoam.action)
 
 dS = nothing
 if ask_yes_no("Check equations of motion?")
     dS = check_eom(spinfoam; gamma=gamma_value)
+end
+
+if geometry_type == :curved &&
+   ask_yes_no("Solve the complex critical point?", default=true)
+    complex_solution = solve_complex_critical_point(
+        spinfoam.action_no_phase,
+        spinfoam.solve_data,
+        spinfoam.gamma_symbol,
+        gamma_value,
+    )
+
+    println("Converged: ", complex_solution.converged)
+    println("Newton iterations: ", complex_solution.iterations)
+    println("max |dS|: ", maximum(abs.(complex_solution.residual)))
+    println("S at the complex critical point: ", complex_solution.action)
+
+    println("Bulk area variables:")
+    for i in eachindex(complex_solution.variables)
+        startswith(string(complex_solution.variables[i]), "η_") || continue
+        println(
+            complex_solution.variables[i],
+            " = ",
+            complex_solution.solution[i],
+        )
+    end
 end
 
 if ask_yes_no("Compute Hessian?")

@@ -19,6 +19,18 @@ end
     return [make_symbol("$(prefix)_$i") for i in 1:n]
 end
 
+function cached_zeta_symbol!(cache, a, i, j, tag)
+    key = (a, i, j, tag)
+    haskey(cache, key) || (cache[key] = make_symbol("zeta_$(a)$(i)$(j)$(tag)"))
+    return cache[key]
+end
+
+function cached_eta_symbol!(cache, a, b, c)
+    key = (a, b, c)
+    haskey(cache, key) || (cache[key] = make_symbol("η_$(a)$(b)$(c)"))
+    return cache[key]
+end
+
 const _im = Ref{Union{Basic,Nothing}}(nothing)
 
 function __init__()
@@ -266,17 +278,6 @@ function build_xi_variables(
     # cache symbols to avoid duplication
     symbol_cache = Dict{Tuple{Int,Int,Int,Symbol}, Basic}()
 
-    function get_symbol(a,i,j,tag::Symbol)
-        key = (a,i,j,tag)
-        if haskey(symbol_cache, key)
-            return symbol_cache[key]
-        else
-            s = make_symbol("zeta_$(a)$(i)$(j)$(tag)")
-            symbol_cache[key] = s
-            return s
-        end
-    end
-
     for a in 1:num_vertex
         for i in 1:ntet
             for j in 1:ntet
@@ -287,8 +288,8 @@ function build_xi_variables(
                 end
 
                 if sgndet[a][i] == 1
-                    za = get_symbol(a,i,j,:a)
-                    zb = get_symbol(a,i,j,:b)
+                    za = cached_zeta_symbol!(symbol_cache, a, i, j, :a)
+                    zb = cached_zeta_symbol!(symbol_cache, a, i, j, :b)
 
                     xi_mat[a][i][j] = Basic[
                         sin(za),
@@ -296,8 +297,8 @@ function build_xi_variables(
                     ]
 
                 elseif tetareasign[a][i][j] == 1
-                    za = get_symbol(a,i,j,:a)
-                    zb = get_symbol(a,i,j,:b)
+                    za = cached_zeta_symbol!(symbol_cache, a, i, j, :a)
+                    zb = cached_zeta_symbol!(symbol_cache, a, i, j, :b)
 
                     if tetn0sign[a][i][j] == 1
                         xi_mat[a][i][j] = Basic[
@@ -312,7 +313,7 @@ function build_xi_variables(
                     end
 
                 else
-                    zb = get_symbol(a,i,j,:b)
+                    zb = cached_zeta_symbol!(symbol_cache, a, i, j, :b)
 
                     xi_mat[a][i][j] = Basic[
                         1,
@@ -412,24 +413,13 @@ function build_η_variables(
     # --------------------------------------------------
     symbol_cache = Dict{Tuple{Int,Int,Int}, Basic}()
 
-    function get_symbol(a,b,c)
-        key = (a,b,c)
-        if haskey(symbol_cache, key)
-            return symbol_cache[key]
-        else
-            s = make_symbol("η_$(a)$(b)$(c)")
-            symbol_cache[key] = s
-            return s
-        end
-    end
-
     # --------------------------------------------------
     # Build ordered bulk η_var directly from OrderBulkFaces
     # --------------------------------------------------
     η_var = Basic[]
     for chain in OrderBulkFaces
         a,b,c = chain[1]
-        push!(η_var, get_symbol(a,b,c))
+        push!(η_var, cached_eta_symbol!(symbol_cache, a, b, c))
     end
 
     # --------------------------------------------------
@@ -461,7 +451,7 @@ function build_η_variables(
 
                 if haskey(bulk_dict, key)
                     a,b,c = bulk_dict[key]
-                    η_mat[k][i][j] = get_symbol(a,b,c)
+                    η_mat[k][i][j] = cached_eta_symbol!(symbol_cache, a, b, c)
 
                 else
                     if !haskey(bdry_dict, key)
@@ -469,7 +459,7 @@ function build_η_variables(
                     end
 
                     a,b,c = bdry_dict[key]
-                    jsym = get_symbol(a,b,c)
+                    jsym = cached_eta_symbol!(symbol_cache, a, b, c)
 
                     η_mat[k][i][j] = jsym
                     push!(η_bdry_set, jsym)

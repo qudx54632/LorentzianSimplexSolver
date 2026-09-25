@@ -8,6 +8,16 @@ using ..FourSimplexConnectivity: build_tets_all,
 
 export run_Regge_action
 
+function four_volume_with_edge(x, simplex_edges, edge_index)
+    T = typeof(x)
+    edges = T.(simplex_edges)
+    edges[edge_index] = x
+    return V4sq(edges...)
+end
+
+function edge_lengths_squared(vertices, edges)
+    return [distance_sq(vertices[i], vertices[j]) for (i, j) in edges]
+end
 
 """
 θfunc(
@@ -31,16 +41,10 @@ function θfunc(simplex_edges, teta_edges, tetb_edges, ah_edges, edge_to_diff_id
 
     x0 = simplex_edges[edge_to_diff_idx]
 
-    f(x) = begin
-        T = typeof(x)
-        l2new = T.(simplex_edges)
-        l2new[edge_to_diff_idx] = x
-        V4sq(
-            l2new[1],  l2new[2],  l2new[3],  l2new[4],  l2new[5],
-            l2new[6],  l2new[7],  l2new[8],  l2new[9],  l2new[10]
-        )
-    end
-    Vtauab = ForwardDiff.derivative(f, x0)
+    Vtauab = ForwardDiff.derivative(
+        x -> four_volume_with_edge(x, simplex_edges, edge_to_diff_idx),
+        x0,
+    )
     term1 = (4^2) / Vt * Vtauab
     term2 = Vtaua / Vt
     term3 = Vtaub / Vt
@@ -110,14 +114,9 @@ function build_thetafunc_inputs_one_simplex(
 
     simplex = collect(simplex5)
 
-    edge_symbol_or_numeric(e::Tuple{Int,Int}) = begin
-        i,j = e
-        return distance_sq(Vertices[i], Vertices[j])
-    end
-    
     # simplex edges (10)
     simplex_edges = edges10_of5(simplex)
-    simplex_edges_syms = [edge_symbol_or_numeric(e) for e in simplex_edges]
+    simplex_edges_syms = edge_lengths_squared(Vertices, simplex_edges)
 
     # determine the two tetrahedra adjacent to this triangle inside the 4-simplex
     tri_set = Set(tri)
@@ -128,12 +127,12 @@ function build_thetafunc_inputs_one_simplex(
     tetraB = vcat(tri, [vB])  # 4 vertices
     teta_edges = edges6_of4(tetraA)
     tetb_edges = edges6_of4(tetraB)
-    teta_edges_syms = [edge_symbol_or_numeric(e) for e in teta_edges]
-    tetb_edges_syms = [edge_symbol_or_numeric(e) for e in tetb_edges]
+    teta_edges_syms = edge_lengths_squared(Vertices, teta_edges)
+    tetb_edges_syms = edge_lengths_squared(Vertices, tetb_edges)
 
     # triangle edges for ah
     ah_edges = tri_edges(tri)
-    ah_edges_syms = [edge_symbol_or_numeric(e) for e in ah_edges]
+    ah_edges_syms = edge_lengths_squared(Vertices, ah_edges)
     
     # opposite edge inside this 4-simplex: between the two vertices not in the hinge triangle
     opp_edge = _to_edge(vA, vB)                 # vA,vB already computed above

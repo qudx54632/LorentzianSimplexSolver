@@ -232,7 +232,7 @@ function build_SO13_corrected(solgso13, TetsReflection, Tetchange, SO4)
                 M = -M
             end
             if [i,j] in C
-                M = M * SO4[i][j]
+                M = M * inv(SO4[i][j])
             end
             out[i][j] = M
         end

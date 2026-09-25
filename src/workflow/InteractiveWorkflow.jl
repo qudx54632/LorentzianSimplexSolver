@@ -34,6 +34,7 @@ export configure_precision!,
        SpinfoamActionData,
        HessianData
 
+"""Regge deficit angles, boundary angles, areas, and the value `i S_Regge`."""
 Base.@kwdef struct ReggeActionData
     deficit_angles::Any
     dihedral_angles::Any
@@ -42,6 +43,7 @@ Base.@kwdef struct ReggeActionData
     iregge::Any
 end
 
+"""Symbolic spinfoam action together with its real geometric solution."""
 Base.@kwdef struct SpinfoamActionData
     symbols::Any
     phase_solution::Any
@@ -52,6 +54,7 @@ Base.@kwdef struct SpinfoamActionData
     gamma_symbol::Basic
 end
 
+"""Symbolic and numerical Hessian data for the selected variables."""
 Base.@kwdef struct HessianData
     variables::Any
     symbols::Any
@@ -59,6 +62,7 @@ Base.@kwdef struct HessianData
     eigenvalues::Any = nothing
 end
 
+"""Select `Float64` or `BigFloat` arithmetic for the complete workflow."""
 configure_precision!(::Type{T}; precision::Integer=100) where {T<:AbstractFloat} =
     PrecisionUtils.configure_precision!(T; precision=precision)
 
@@ -67,6 +71,7 @@ function validate_geometry_precision(geom::GeometryTypes.GeometryCollection{T}) 
     return T
 end
 
+"""Construct all 4-simplices from one global coordinate for each vertex."""
 function construct_geometry(simplices, vertex_coords; verbose::Bool=false)
     T = eltype(first(values(vertex_coords)))
     PrecisionUtils.validate_precision(T, values(vertex_coords))
@@ -81,6 +86,7 @@ function construct_geometry(simplices, vertex_coords; verbose::Bool=false)
     return GeometryTypes.GeometryCollection(datasets)
 end
 
+"""Check the geometric critical-point equations separately in every 4-simplex."""
 function check_simplex_consistency(geom)
     validate_geometry_precision(geom)
     failed_simplices = Int[]
@@ -101,6 +107,10 @@ function check_simplex_consistency(geom)
     return nothing
 end
 
+"""
+Connect the 4-simplices, fix their orientation, match shared faces, and gauge
+fix the resulting boundary data.
+"""
 function prepare_global_geometry!(
     geom,
     simplices;
@@ -143,6 +153,7 @@ function prepare_global_geometry!(
     return geom
 end
 
+"""Compute the Lorentzian Regge action from global or simplex-local coordinates."""
 function compute_regge_action(geom, simplices, vertex_coords)
     T = validate_geometry_precision(geom)
     PrecisionUtils.validate_precision(T, values(vertex_coords))
@@ -159,6 +170,111 @@ function compute_regge_action(geom, simplices, vertex_coords)
     )
 end
 
+function curved_face_triangle(tetsfaces, face)
+    return tetsfaces[face[1][1]][face[1][2]][face[1][3]]
+end
+
+function curved_local_angle(local_coords, simplices, simplex_number, triangle)
+    data = ReggeAction.build_thetafunc_inputs_one_simplex(
+        local_coords[simplex_number],
+        simplices[simplex_number],
+        triangle,
+    )
+    return ReggeAction.θfunc(data...)
+end
+
+function compute_regge_action(
+    geom,
+    simplices,
+    vertices_for_each_simplex::AbstractVector,
+)
+    T = validate_geometry_precision(geom)
+    for local_coordinates in vertices_for_each_simplex
+        PrecisionUtils.validate_precision(T, local_coordinates)
+    end
+
+    local_coords = [
+        Dict(
+            simplices[k][i] => vertices_for_each_simplex[k][i]
+            for i in eachindex(simplices[k])
+        )
+        for k in eachindex(simplices)
+    ]
+
+    if length(simplices) == 1
+        return compute_regge_action(geom, simplices, local_coords[1])
+    end
+
+    tetsfaces = geom.connectivity[1]["TetFaces"]
+    bulk_faces = geom.connectivity[1]["OrderBulkFaces"]
+    boundary_faces = geom.connectivity[1]["OrderBDryFaces"]
+
+    deficit_angles = [
+        (
+            2pi + sum(
+                curved_local_angle(
+                    local_coords,
+                    simplices,
+                    k,
+                    curved_face_triangle(tetsfaces, face),
+                )
+                for k in eachindex(simplices)
+                if all(
+                    v -> v in simplices[k],
+                    curved_face_triangle(tetsfaces, face),
+                )
+            )
+        ) / im
+        for face in bulk_faces
+    ]
+
+    dihedral_angles = [
+        begin
+            angle = sum(
+                curved_local_angle(
+                    local_coords,
+                    simplices,
+                    k,
+                    curved_face_triangle(tetsfaces, face),
+                )
+                for k in eachindex(simplices)
+                if all(
+                    v -> v in simplices[k],
+                    curved_face_triangle(tetsfaces, face),
+                )
+            )
+            angle = angle + abs(real(angle) / pi) * pi
+            angle / im
+        end
+        for face in boundary_faces
+    ]
+
+    bulk_areas = [
+        geom.simplex[face[1][1]].areas[face[1][2]][face[1][3]]
+        for face in bulk_faces
+    ]
+    boundary_areas = [
+        geom.simplex[face[1][1]].areas[face[1][2]][face[1][3]]
+        for face in boundary_faces
+    ]
+    iregge = im * (
+        sum(bulk_areas .* deficit_angles) +
+        sum(boundary_areas .* dihedral_angles)
+    )
+
+    return ReggeActionData(
+        deficit_angles=deficit_angles,
+        dihedral_angles=dihedral_angles,
+        bulk_areas=bulk_areas,
+        boundary_areas=boundary_areas,
+        iregge=iregge,
+    )
+end
+
+"""
+Construct the phase-fixed symbolic spinfoam action and evaluate it at the real
+critical or pseudo-critical configuration.
+"""
 function compute_spinfoam_action(
     geom,
     regge::ReggeActionData;
@@ -227,6 +343,7 @@ function compute_spinfoam_action(prepared::SpinfoamActionData; γ=nothing, gamma
     )
 end
 
+"""Differentiate the symbolic spinfoam action with respect to internal variables."""
 function compute_eom(action::SpinfoamActionData; variables=nothing)
     T = real_type(action.solve_data)
     PrecisionUtils.validate_active_precision(T)
@@ -234,6 +351,7 @@ function compute_eom(action::SpinfoamActionData; variables=nothing)
     return EOMs.compute_EOMs(action.action_no_phase, vars)
 end
 
+"""Evaluate and print the equations of motion at the stored real configuration."""
 function check_eom(action::SpinfoamActionData; γ=nothing, gamma=nothing, eom=nothing)
     T = real_type(action.solve_data)
     PrecisionUtils.validate_active_precision(T)
@@ -244,6 +362,7 @@ function check_eom(action::SpinfoamActionData; γ=nothing, gamma=nothing, eom=no
     return dS
 end
 
+"""Compute and evaluate the spinfoam Hessian for the selected variables."""
 function compute_hessian(
     geom,
     action::SpinfoamActionData;
