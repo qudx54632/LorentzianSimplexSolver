@@ -15,7 +15,7 @@ function configure_precision!(T; precision=100)
         precision > 0 || error("BigFloat precision must be positive, got $precision.")
         setprecision(BigFloat, precision)
         BIGFLOAT_BITS[] = precision
-        TOLERANCE[] = BigFloat("1e-12")
+        TOLERANCE[] = BigFloat("1e-30")
     else
         error("Supported scalar types are Float64 and BigFloat, got $T.")
     end

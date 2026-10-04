@@ -190,7 +190,7 @@ else
         geom,
         regge;
         gamma=gamma_value,
-        bulk_sum_form=false,
+        bulk_sum_form=true,
     )
 end
 display(spinfoam.action)

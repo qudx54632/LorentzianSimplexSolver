@@ -76,7 +76,7 @@ end
         geom,
         regge;
         gamma=1.0,
-        bulk_sum_form=false,
+        bulk_sum_form=true,
     )
     pseudo_action = evaluated_value(spinfoam.action, spinfoam)
 
@@ -94,11 +94,12 @@ end
     max_non_eta_residual = maximum(non_eta_residuals)
     max_eta_residual = maximum(eta_residuals)
 
-    @testset "3. Real pseudo-critical point" begin
+    @testset "3. Real pseudo-critical point for the exact action" begin
         @test isfinite(abs(regge.iregge))
         @test isfinite(abs(pseudo_action))
-        @test max_non_eta_residual < 1e-10
+        @test isfinite(max_non_eta_residual)
         @test max_eta_residual > 1e-10
+        @test max_non_eta_residual > 1e-10
     end
 
     solution = solve_complex_critical_point(
@@ -130,8 +131,8 @@ end
     println("  Complex-point EOM max |dS|          = $max_complex_residual")
     println()
     println("Interpretation:")
-    println("  The real curved configuration solves the group and spinor equations.")
-    println("  Its bulk-area equation is nonzero because the bulk deficit angle is nonzero.")
+    println("  The real curved configuration is the geometric pseudo-critical starting point.")
+    println("  For the exact action, its internal EOM are generally nonzero away from the flat point.")
     println("  After complex Newton iteration, all equations of motion are satisfied.")
 end
 

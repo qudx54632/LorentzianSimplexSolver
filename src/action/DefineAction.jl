@@ -108,7 +108,7 @@ function bulk_action(
     kappaMat,
     OrderBulkFaces;
     γ=γsym(),
-    bulk_sum_form::Bool=false,
+    bulk_sum_form::Bool=true,
 )
     seed = ηlabelsMat[1][1][2]
     Sh = symzero(seed)
@@ -139,7 +139,7 @@ function bulk_action(
     return Sh
 end
 
-function compute_action(geom; γ=γsym(), bulk_sum_form::Bool=false)
+function compute_action(geom; γ=γsym(), bulk_sum_form::Bool=true)
     gvariablesall = geom.varias[:g_mat]
     zvariablesall = geom.varias[:z_mat]
     zetabdryall   = geom.varias[:xi_mat]

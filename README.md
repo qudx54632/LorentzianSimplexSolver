@@ -15,10 +15,10 @@ Every 4-simplex is flat internally. "Curved Regge geometry" means that the whole
 The following distinction is important in the curved calculation.
 
 1. **Real critical point for flat geometry.** The globally embedded geometry gives a real solution of all spinfoam critical-point equations.
-2. **Real pseudo-critical point for curved geometry.** Each 4-simplex is constructed from its local coordinates and the usual face matching and gauge fixing are performed. At this real configuration, the equations for the group and spinor variables vanish. In general only derivatives with respect to the bulk area variables `η` remain nonzero; they encode the nonzero bulk deficit angles.
-3. **Complex critical point.** Starting from the real pseudo-critical point, the internal variables are complexified and Newton's method solves all equations `dS = 0`. The returned action is evaluated at this complex solution, not at the real starting point.
+2. **Real pseudo-critical point for curved geometry.** Each 4-simplex is constructed from its local coordinates and the usual face matching and gauge fixing are performed. This gives a real geometric configuration from which the complex calculation starts. For the exact action used by default, a curved pseudo-critical point is generally not a stationary point: derivatives with respect to both the group-spinor variables and the bulk area variables `η` can be nonzero.
+3. **Complex critical point.** Starting from the real pseudo-critical point, the internal group, spinor, and bulk area variables are complexified. Newton's method solves all equations `dS = 0`, and the action is then evaluated at the complex solution.
 
-The curved calculation uses the logarithmic bulk-face expression `η * log(prodEh)`, selected by `bulk_sum_form=false`. This is required for the analytic continuation used by the complex critical-point solver.
+By default, each bulk face contributes the exact expression `η_h * (E_h - 1)`, selected by `bulk_sum_form=true`. The alternative logarithmic expression `η_h * log(E_h)` is available through `bulk_sum_form=false`. The complex solver does not impose either convention: it symbolically differentiates the action supplied to it. The workflow and examples below use the default exact form.
 
 ## Calculation pipeline
 
@@ -29,8 +29,8 @@ The public workflow follows the same order as the mathematical construction:
 3. `prepare_global_geometry!` fixes the global orientation, builds connectivity, matches shared-face data, and gauge fixes.
 4. `compute_regge_action` sums the local dihedral-angle contributions at each triangle.
 5. `compute_spinfoam_action` defines the symbolic EPRL action, solves the real geometric data, and fixes the boundary spinor phases using the Regge boundary angles.
-6. `compute_eom`, `check_eom`, and `compute_hessian` calculate derivatives at the real critical or pseudo-critical configuration.
-7. `solve_complex_critical_point` starts from the pseudo-critical configuration and solves the complex equations by Newton iteration.
+6. `compute_eom` constructs the symbolic equations of motion, while `check_eom` and `compute_hessian` evaluate the equations and Hessian at the stored real configuration.
+7. `solve_complex_critical_point` uses the same symbolic action, fixes the boundary data, and starts Newton iteration from the real pseudo-critical configuration.
 
 For a single 4-simplex, step 3 is optional.
 
@@ -63,7 +63,7 @@ julia --project=. examples/interactive_main.jl
 
 The program asks whether the geometry is flat or curved, selects numerical precision, reads the simplices and coordinates, and then offers the geometry checks, action, equations of motion, complex critical point, and Hessian. Input coordinates use the order `(t,x,y,z)`.
 
-For flat geometry, enter one coordinate for each global vertex. For curved geometry, enter five local coordinates for every 4-simplex in the vertex order printed by the program. Complete flat and curved input data are collected in `examples/example-complex.txt`. The Black-White example requires `BigFloat`.
+For flat geometry, enter one coordinate for each global vertex. For curved geometry, enter five local coordinates for every 4-simplex in the vertex order printed by the program. Complete flat and curved input data are collected in `examples/example-complex.txt`.
 
 ## Flat geometry from functions
 
@@ -122,10 +122,9 @@ spinfoam = compute_spinfoam_action(
     geom,
     regge;
     gamma=1.0,
-    bulk_sum_form=false,
 )
 
-# Derivatives at the real pseudo-critical point.
+# For the exact action these residuals are generally nonzero.
 dS_pseudo = compute_eom(spinfoam)
 check_eom(spinfoam; gamma=1.0, eom=dS_pseudo)
 
@@ -154,7 +153,7 @@ configure_precision!(Float64)
 configure_precision!(BigFloat; precision=100)
 ```
 
-The default numerical tolerances are `1e-10` for `Float64` and `1e-12` for `BigFloat`.
+The geometry and real-point checks use tolerances `1e-10` for `Float64` and `1e-30` for `BigFloat`. The complex Newton tolerance is set independently by the `tol` keyword.
 
 ## Repository layout
 
@@ -187,7 +186,7 @@ using Pkg
 Pkg.test("LorentzianSimplexSolver")
 ```
 
-The test checks curved geometry construction, global matching, the pseudo-critical equations, and convergence of the complex critical point.
+The test checks flat and curved geometry construction, shared-face matching, the expected nonzero exact-action residuals at the real curved starting point, and convergence of all equations of motion at the complex critical point.
 
 ## Research use
 
