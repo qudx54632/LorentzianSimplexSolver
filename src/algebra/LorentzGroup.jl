@@ -140,19 +140,17 @@ end
 function exp2x2_from_square(θ::T, B::AbstractMatrix{Complex{T}}) where {T<:Real}
     I2 = Matrix{Complex{T}}(I, 2, 2)
     B2 = B * B
-    α = real(tr(B2)) / T(2)
+    # For a general sl(2,C) generator, this scalar is complex.
+    α = tr(B2) / T(2)
 
     tol = T(get_tolerance())
 
     if abs(α) < tol
         return I2 + θ * B
-    elseif α > zero(T)
-        s = sqrt(α)
-        return cosh(θ*s) * I2 + (sinh(θ*s)/s) * B
-    else
-        s = sqrt(-α)
-        return cos(θ*s) * I2 + (sin(θ*s)/s) * B
     end
+
+    s = sqrt(α)
+    return cosh(θ*s) * I2 + (sinh(θ*s)/s) * B
 end
 
 # -------------------------------------------------------------
