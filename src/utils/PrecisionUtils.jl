@@ -8,7 +8,7 @@ const ACTIVE_TYPE = Ref(Float64)
 const BIGFLOAT_BITS = Ref(0)
 const TOLERANCE = Ref{Real}(1e-10)
 
-function configure_precision!(T; precision=100)
+function configure_precision!(T; precision=160)
     if T === Float64
         TOLERANCE[] = 1e-10
     elseif T === BigFloat

@@ -63,7 +63,7 @@ Base.@kwdef struct HessianData
 end
 
 """Select `Float64` or `BigFloat` arithmetic for the complete workflow."""
-configure_precision!(::Type{T}; precision::Integer=100) where {T<:AbstractFloat} =
+configure_precision!(::Type{T}; precision::Integer=160) where {T<:AbstractFloat} =
     PrecisionUtils.configure_precision!(T; precision=precision)
 
 function validate_geometry_precision(geom::GeometryTypes.GeometryCollection{T}) where {T<:AbstractFloat}
