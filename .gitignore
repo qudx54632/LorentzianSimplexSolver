@@ -1,2 +1,6 @@
 # macOS metadata
 .DS_Store
+*.cov
+*.jl.cov
+*.jl.mem
+.ipynb_checkpoints/

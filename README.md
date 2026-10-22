@@ -36,7 +36,9 @@ For a single 4-simplex, step 3 is optional.
 
 ## Installation
 
-The package is not yet registered in the Julia General registry. Install the development version directly from GitHub:
+Julia 1.11 or later is required. The package has been tested locally with Julia 1.12.3.
+
+Install the package directly from GitHub:
 
 ```julia
 using Pkg
@@ -52,6 +54,8 @@ Pkg.activate(".")
 Pkg.instantiate()
 using LorentzianSimplexSolver
 ```
+
+The committed `Manifest.toml` records a Julia 1.12.3 environment. When using a different Julia minor version from a local clone, run `Pkg.resolve()` before `Pkg.instantiate()`.
 
 ## Interactive workflow
 
@@ -83,7 +87,9 @@ vertex_coords = Dict(
 
 geom = construct_geometry(simplices, vertex_coords)
 regge = compute_regge_action(geom, simplices, vertex_coords)
-spinfoam = compute_spinfoam_action(geom, regge; gamma=0.1)
+spinfoam = compute_spinfoam_action(
+    geom, regge; gamma=0.1, bulk_sum_form=true,
+)
 
 dS = compute_eom(spinfoam)
 check_eom(spinfoam; gamma=0.1, eom=dS)
@@ -122,6 +128,7 @@ spinfoam = compute_spinfoam_action(
     geom,
     regge;
     gamma=1.0,
+    bulk_sum_form=true,
 )
 
 # For the exact action these residuals are generally nonzero.
@@ -150,10 +157,10 @@ Precision must be configured before coordinates are created or parsed:
 
 ```julia
 configure_precision!(Float64)
-configure_precision!(BigFloat; precision=100)
+configure_precision!(BigFloat; precision=160)
 ```
 
-The geometry and real-point checks use tolerances `1e-10` for `Float64` and `1e-30` for `BigFloat`. The complex Newton tolerance is set independently by the `tol` keyword.
+Choose one precision setting before constructing the input. For `BigFloat`, parse decimal strings, for example `BigFloat("0.1")`, and use the same type for coordinates, `gamma`, and `tol`. The geometry and real-point checks use tolerances `1e-10` for `Float64` and `1e-30` for `BigFloat`. The Newton tolerance is set independently by the `tol` keyword.
 
 ## Repository layout
 
@@ -179,11 +186,10 @@ The high-level functions are kept in `workflow/InteractiveWorkflow.jl`; the rema
 
 ## Tests
 
-Run the automated Delta3 regression test with:
+Run the automated Delta3 regression test from this package's root directory with:
 
-```julia
-using Pkg
-Pkg.test("LorentzianSimplexSolver")
+```bash
+julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
 The test checks flat and curved geometry construction, shared-face matching, the expected nonzero exact-action residuals at the real curved starting point, and convergence of all equations of motion at the complex critical point.
